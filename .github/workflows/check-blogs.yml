@@ -1,0 +1,43 @@
+name: 네이버 블로그 새 글 확인
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: blog-check
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 의존성 설치
+        run: pip install requests
+
+      - name: 새 글 확인 및 알림 전송
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python check_once.py
+
+      - name: 확인한 글 기록 저장
+        run: |
+          if [ -n "$(git status --porcelain seen.json)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add seen.json
+            git commit -m "chore: 확인한 글 기록 업데이트"
+            git pull --rebase origin "$GITHUB_REF_NAME"
+            git push
+          fi

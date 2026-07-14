@@ -49,8 +49,8 @@ async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = update.effective_chat.id
     storage.add_subscription(chat_id, blog_id, blog_name)
-    if posts:
-        storage.update_last_link(chat_id, blog_id, posts[0]["link"])
+    # 구독 시점의 기존 글은 알림 없이 기준선으로 저장
+    storage.mark_seen(chat_id, blog_id, [p["link"] for p in posts])
 
     await update.message.reply_text(
         f"'{blog_name}' 블로그 구독을 시작했습니다. 새 글이 올라오면 알려드릴게요."
@@ -90,28 +90,36 @@ async def check_all_subscriptions(context: ContextTypes.DEFAULT_TYPE):
         if not posts:
             continue
 
-        last_link = sub["last_link"]
-        if last_link is None:
-            storage.update_last_link(sub["chat_id"], sub["blog_id"], posts[0]["link"])
+        seen = storage.get_seen_links(sub["chat_id"], sub["blog_id"])
+        if not seen:
+            # 기준선이 없으면(과거 버전에서 이전 등) 알림 없이 현재 글들을 기준선으로 저장
+            storage.mark_seen(sub["chat_id"], sub["blog_id"], [p["link"] for p in posts])
             continue
 
-        new_posts = []
-        for post in posts:
-            if post["link"] == last_link:
-                break
-            new_posts.append(post)
-
-        if new_posts:
-            for post in reversed(new_posts):  # 오래된 글부터 순서대로 발송
-                text = f"🔔 [{blog_name}] 새 글 등록\n{post['title']}\n{post['link']}"
+        new_posts = [p for p in posts if p["link"] not in seen]
+        for post in reversed(new_posts):  # 오래된 글부터 순서대로 발송
+            text = f"🔔 [{blog_name}] 새 글 등록\n{post['title']}\n{post['link']}"
+            try:
                 await context.bot.send_message(chat_id=sub["chat_id"], text=text)
-            storage.update_last_link(sub["chat_id"], sub["blog_id"], posts[0]["link"])
+            except Exception as e:
+                logger.warning("failed to send to chat %s: %s", sub["chat_id"], e)
+                break
+            storage.mark_seen(sub["chat_id"], sub["blog_id"], [post["link"]])
 
 
 def main():
     storage.init_db()
 
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .connect_timeout(30)
+        .read_timeout(30)
+        .write_timeout(30)
+        .get_updates_connect_timeout(30)
+        .get_updates_read_timeout(30)
+        .build()
+    )
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("subscribe", subscribe))
     application.add_handler(CommandHandler("unsubscribe", unsubscribe))
