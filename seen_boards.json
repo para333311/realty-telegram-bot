@@ -159,5 +159,9 @@
   "https://www.songpa.go.kr/www/sub.do?key=2776": {
     "name": "송파구",
     "keys": []
+  },
+  "https://www.seoul.go.kr/news/news_report.do": {
+    "name": "서울시보도자료",
+    "keys": []
   }
 }
