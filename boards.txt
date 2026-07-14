@@ -4,6 +4,15 @@
 #   - 게시판주소: 게시판 목록 페이지의 전체 주소 (http로 시작)
 # 특정 단어가 든 공고만 받고 싶으면 맨 뒤에 | 키워드1,키워드2 를 붙일 수 있습니다.
 # ('#'으로 시작하는 줄은 무시됩니다)
-#
-# 예시:
-# 마포구 재개발소식 | https://www.mapo.go.kr/site/main/board/notice/list
+
+서울시결재문서 | https://opengov.seoul.go.kr/sanction/list | 재개발,신속통합,일대,후보지,수권,정비계획,동의서
+강남구 | https://www.gangnam.go.kr/board/union6/list.do?mid=ID02_01130505
+동작구 | https://www.dongjak.go.kr/portal/bbs/B0001387/list.do?menuNo=201575
+마포구 | https://www.mapo.go.kr/site/main/board/notice/list?baCommSelec=false&sc=&sv=%EC%8B%A0%EC%86%8D%ED%86%B5%ED%95%A9&pageSize=10
+용산구 | https://www.yongsan.go.kr/portal/bbs/B0000170/list.do?menuNo=200848&deptId=3020154&sdate=&edate=&searchCnd=1&searchWrd=
+성동구 | https://www.sd.go.kr/main/selectBbsNttList.do?key=1307&bbsNo=166&integrDeptCode=&searchCtgry=&searchCnd=SJ&searchKrwd=%EB%8F%99%EC%9D%98%EC%84%9C
+종로구 | https://www.jongno.go.kr/portal/bbs/selectBoardList.do?bbsId=BBSMSTR_000000000175&menuId=400675&menuNo=400675
+동대문구 | https://www.ddm.go.kr/www/selectBbsNttList.do?bbsNo=38&key=904&searchCtgry=%EB%8F%84%EC%8B%9C%EC%A0%95%EB%B9%84
+영등포구 | https://www.ydp.go.kr/www/selectBbsNttList.do?key=2848&bbsNo=40&integrDeptCode=&searchCtgry=&pageUnit=10&searchCnd=SJ&searchKrwd=%EC%8B%A0%EC%86%8D%ED%86%B5%ED%95%A9
+광진구 | https://www.gwangjin.go.kr/portal/bbs/B0000001/list.do?pageIndex=1&menuNo=200190&deptId=&searchCnd=1&searchWrd=%EB%B2%88%ED%98%B8%EB%B6%80%EC%97%AC&sdate=&edate=
+강동구 | https://www.gangdong.go.kr/web/newportal/bbs/b_111
