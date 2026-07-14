@@ -37,6 +37,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.BOARD_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SEOUL_API_KEY: ${{ secrets.SEOUL_API_KEY }}
         run: python check_boards.py
 
       - name: 확인한 글 기록 저장

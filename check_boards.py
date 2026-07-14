@@ -74,7 +74,72 @@ def load_boards():
     return boards
 
 
+TITLE_KEYS = ("TITLE", "POST_TITLE", "SJ", "NTT_SJ", "SUBJECT", "DOC_NM", "NEWS_TITLE", "TIT")
+DATE_RE = re.compile(r"\d{4}[-./]\d{1,2}[-./]\d{1,2}")
+
+
+def scrape_seoul_api(url, keywords, row_keywords=(), name=""):
+    """서울 열린데이터광장 OpenAPI(JSON)에서 글 목록을 추출한다.
+
+    boards.txt의 주소에 {KEY} 자리에는 SEOUL_API_KEY 환경변수 값이 들어간다.
+    """
+    key = os.environ.get("SEOUL_API_KEY", "").strip()
+    if not key:
+        key = "sample"  # 발급 전 테스트용 (5건 제한)
+        logger.warning("SEOUL_API_KEY 미설정: sample 키로 호출합니다 (%s)", name or url)
+    response = requests.get(url.replace("{KEY}", key), timeout=(15, 40), verify=False)
+    response.raise_for_status()
+    data = json.loads(response.text)
+
+    # 응답에서 row 목록 찾기: {서비스명: {list_total_count, RESULT, row: [...]}}
+    rows = []
+    for value in data.values():
+        if isinstance(value, dict) and isinstance(value.get("row"), list):
+            rows = value["row"]
+            break
+    if not rows:
+        result = data.get("RESULT") or next(
+            (v.get("RESULT") for v in data.values() if isinstance(v, dict)), None
+        )
+        raise RuntimeError(f"API 응답에 row 없음: {result}")
+
+    posts = []
+    for row in rows:
+        values = {k: str(v).strip() for k, v in row.items() if v is not None}
+        title = next((values[k] for k in TITLE_KEYS if values.get(k)), "")
+        if not title:  # 제목 칸을 못 찾으면 가장 긴 문자열을 제목으로
+            texts = [v for v in values.values()
+                     if v and not v.startswith("http") and not DATE_RE.fullmatch(v)]
+            title = max(texts, key=len, default="")
+        if len(title) < 3:
+            continue
+
+        if keywords and not any(k in title for k in keywords):
+            continue
+        if row_keywords:
+            # 본문 필드는 제외하고 부서명 등 메타 필드에서만 찾는다 (본문 언급 오탐 방지)
+            row_text = " ".join(
+                v for k, v in values.items()
+                if not any(x in k.upper() for x in ("CONTENT", "EXCERPT", "DESC"))
+            )
+            if not any(k in row_text for k in row_keywords):
+                continue
+
+        link = next((v for v in values.values() if v.startswith("http")), "")
+        if not link and values.get("POST_ID"):
+            # 서울시 보도자료(SeoulNewsList)는 링크 필드가 없어 직접 구성
+            link = f"https://mediahub.seoul.go.kr/archives/{values['POST_ID']}"
+        date_val = next((m.group() for v in values.values()
+                         for m in [DATE_RE.search(v)] if m), "")
+        posts.append({"title": title, "link": link, "date": date_val})
+
+    logger.info("%s: API 행 %d개, 필터 통과 %d건", name or url, len(rows), len(posts))
+    return posts
+
+
 def scrape_board(url, keywords, row_keywords=(), name=""):
+    if "openapi.seoul.go.kr" in url:
+        return scrape_seoul_api(url, keywords, row_keywords, name)
     """게시판 목록에서 (제목, 링크, 날짜) 목록을 추출한다. jejeboard의 검증된 로직."""
     last_error = None
     for attempt in range(2):  # 느린 사이트를 위해 1회 재시도
