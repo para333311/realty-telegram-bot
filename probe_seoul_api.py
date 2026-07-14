@@ -1,4 +1,4 @@
-"""(임시) 서울 열린데이터광장 OpenAPI 조사 2차. 조사 후 삭제 예정."""
+"""(임시) 서울 열린데이터광장 OpenAPI 조사 3차. 조사 후 삭제 예정."""
 
 import json
 import re
@@ -16,97 +16,86 @@ def get(url, **kw):
     try:
         r = S.get(url, timeout=30, verify=False, **kw)
         r.encoding = "utf-8"
-        print(f"### GET {r.url} -> {r.status_code}, {len(r.text)} bytes")
+        print(f"### GET {r.url[:120]} -> {r.status_code}, {len(r.text)} bytes")
         return r
     except Exception as e:
-        print(f"### GET {url} -> ERROR {e}")
+        print(f"### GET {url[:120]} -> ERROR {e}")
         return None
 
 
-def show_api_tab(oa_id):
-    """데이터셋의 OpenAPI 탭(A타입)에서 서비스명/샘플 URL 추출."""
-    r = get(f"https://data.seoul.go.kr/dataList/{oa_id}/A/1/datasetView.do")
-    if not r or r.status_code != 200:
-        return
-    text = r.text
-    m = re.search(r"<title>([^<]*)</title>", text)
-    infnm = re.findall(r'infNm["\']?\s*[:=]\s*["\']([^"\']+)', text)
-    print(f"  [{oa_id}] infNm: {infnm[:1]}")
-    for pat in (r"openapi\.seoul\.go\.kr:8088/[^\s\"'<>]+",
-                r'serviceNm["\']?\s*[:=]\s*["\']([A-Za-z0-9_]+)',
-                r'infId["\']?\s*[:=]\s*["\']([A-Za-z0-9_-]+)',
-                r"/(?:xml|json|xls)/([A-Za-z][A-Za-z0-9_]{3,60})/1/",
-                r'"srvNm"\s*:\s*"([^"]+)"'):
-        found = set(re.findall(pat, text))
-        if found:
-            print(f"  [{oa_id}] {pat[:25]}...: {sorted(found)[:8]}")
-
-
-def try_service(service, n=3):
-    r = get(f"http://openapi.seoul.go.kr:8088/sample/json/{service}/1/{n}/")
-    if not r or r.status_code != 200:
+def try_service(service, n=2, quiet=False):
+    r = None
+    try:
+        r = S.get(f"http://openapi.seoul.go.kr:8088/sample/json/{service}/1/{n}/",
+                  timeout=20, verify=False)
+    except Exception as e:
+        print(f"  {service} -> ERROR {e}")
         return False
     try:
         data = json.loads(r.text)
     except Exception:
-        print("  (json 아님)", r.text[:200])
+        print(f"  {service} -> json 아님 {r.text[:120]}")
         return False
     for v in data.values():
         if isinstance(v, dict) and v.get("row"):
             row = v["row"][0]
             print(f"  ✅ {service} 필드: {sorted(row.keys())}")
-            compact = {k: str(val)[:60] for k, val in row.items() if k != "POST_CONTENT"}
-            print(f"     첫 행: {json.dumps(compact, ensure_ascii=False)[:700]}")
+            compact = {k: str(val)[:70] for k, val in row.items()
+                       if "CONTENT" not in k.upper()}
+            print(f"     첫 행: {json.dumps(compact, ensure_ascii=False)[:600]}")
             return True
-    print(f"  ❌ {service}: {str(data)[:120]}")
+    if not quiet:
+        code = ""
+        try:
+            code = (data.get("RESULT") or {}).get("CODE", "")
+        except Exception:
+            pass
+        print(f"  ❌ {service} {code}")
     return False
 
 
-print("=========== 1) SeoulNewsList 전체 필드 (부서명 있나?) ===========")
-try_service("SeoulNewsList")
+print("=========== 1) 데이터셋 페이지에서 서비스명 원문 덤프 ===========")
+for oa in ("OA-12709", "OA-2192", "OA-12651"):
+    r = get(f"https://data.seoul.go.kr/dataList/{oa}/A/1/datasetView.do")
+    if not r:
+        continue
+    text = r.text
+    # 후보 토큰: JS/HTML 안의 CamelCase List/Info 이름들
+    tokens = set(re.findall(r"[A-Z][A-Za-z0-9]{4,50}(?:List|Info|Status|Service)", text))
+    noise = {"SelectBox", "TabList", "DataList", "PageList", "MenuList", "FileList",
+             "CodeList", "BbsList", "CommentList", "TagList", "ChartList"}
+    tokens = sorted(t for t in tokens if t not in noise)
+    print(f"  [{oa}] 후보 토큰: {tokens[:30]}")
+    for m in re.finditer(r"8088", text):
+        s = max(0, m.start() - 80)
+        print(f"  [{oa}] 8088 주변: ...{text[s:m.end()+120]!r}...")
 
-print("\n=========== 2) 데이터셋 검색 폼 파라미터 파악 ===========")
-r = get("https://data.seoul.go.kr/dataList/datasetList.do")
-if r:
-    inputs = re.findall(r"<(?:input|select)[^>]*name=[\"']([^\"']+)", r.text)
-    print("  폼 필드:", sorted(set(inputs)))
-    forms = re.findall(r"<form[^>]*action=[\"']([^\"']+)[\"'][^>]*>", r.text)
-    print("  폼 액션:", sorted(set(forms))[:10])
-    # 검색 관련 자바스크립트 함수 흔적
-    for m in sorted(set(re.findall(r"function\s+(fn\w*[Ss]earch\w*)", r.text)))[:10]:
-        print("  검색 함수:", m)
+print("\n=========== 2) 메타 API (전체 서비스 목록) 후보 호출 ===========")
+meta_found = False
+for svc in ("SearchApiListService", "ApiInfoService", "OpenApiList", "InfApiList",
+            "SearchApiService", "ListApiService"):
+    if try_service(svc, 3, quiet=True):
+        meta_found = True
 
-print("\n=========== 3) 검색 시도 (여러 파라미터) ===========")
-for params in ({"searchDataDesc": "결재문서"}, {"schData": "결재문서"},
-               {"sSearchValue": "결재문서"}, {"searchNm": "결재문서"}):
-    r = get("https://data.seoul.go.kr/dataList/datasetList.do", params=params)
-    if r:
-        titles = re.findall(r'infNm["\']?\s*[:=]\s*["\']([^"\']+)', r.text)
-        ids = re.findall(r"OA-\d+", r.text)
-        pair = sorted(set(zip(ids, titles)))[:6] if len(ids) == len(titles) else sorted(set(ids))[:6]
-        print(f"  {list(params)[0]} -> {pair}")
+print("\n=========== 3) 규칙 기반 서비스명 그리드 시도 ===========")
+prefixes = ["Ydp", "Yeongdeungpo", "Yangcheon", "Yc", "Junggu", "JungGu",
+            "Seocho", "Songpa", "Seodaemun", "Sdm"]
+suffixes = ["NewsNoticeList", "NoticeList", "GosiList", "NewsGosiList", "GosiGonggoList"]
+hits = []
+for p in prefixes:
+    for s in suffixes:
+        if try_service(p + s, 1, quiet=True):
+            hits.append(p + s)
+print("  그리드 성공:", hits)
 
-print("\n=========== 4) 통합검색 API ===========")
-for url in ("https://data.seoul.go.kr/totSearch/totSearchList.do?searchKeyword=결재문서",
-            "https://data.seoul.go.kr/totSearch/search.do?query=결재문서"):
-    r = get(url)
-    if r and r.status_code == 200:
-        ids = sorted(set(re.findall(r"OA-\d+", r.text)))[:15]
-        print("  발견 ID:", ids)
+print("\n=========== 4) 영등포 보도자료(OA-12709)의 실제 서비스명 확인 ===========")
+for svc in ("YdpNewsList", "YeongdeungpoNewsList", "YdpBodoList", "YdpPressList",
+            "YeongdeungpoPressList"):
+    try_service(svc, 1, quiet=True)
 
-print("\n=========== 5) OpenAPI 탭(A타입) 페이지에서 서비스명 ===========")
-for oa in ("OA-12709", "OA-12651", "OA-2191"):
-    show_api_tab(oa)
-
-print("\n=========== 6) 결재문서/고시공고 서비스명 후보 대량 시도 ===========")
-candidates = [
-    # 결재문서(정보소통광장)
-    "OpenGovDocList", "SeoulSanctionList", "InfoSotongSanction", "OpenGovList",
-    "ApprovalDocList", "SanctionDocList", "OpenDataSanction",
-    # 영등포/양천 고시/공지/보도
-    "YdpNews", "YangcheonNoticeList", "SebcNotice",
-]
-for c in candidates:
-    try_service(c, 1)
+print("\n=========== 5) 결재문서 후보 ===========")
+for svc in ("OpenGovSanctions", "SanctionsList", "GovSanctionList", "OpenGovDoc",
+            "SeoulOpenGovList", "DocSanctionList", "OpenGovInfoList"):
+    try_service(svc, 1, quiet=True)
 
 print("\n=========== 끝 ===========")
