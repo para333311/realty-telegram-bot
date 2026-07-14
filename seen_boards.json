@@ -76,8 +76,18 @@
   },
   "https://www.ddm.go.kr/www/selectBbsNttList.do?bbsNo=38&key=904&searchCtgry=%EB%8F%84%EC%8B%9C%EC%A0%95%EB%B9%84": {
     "name": "동대문구",
-    "keys": [],
-    "error": true
+    "keys": [
+      "청량리재정비촉진지구 용두1구역2지구 도시정비형 재개발사업 감정평가업자 선정 결과 공개#2026-03-13",
+      "도시관리계획(동부화물터미널 지구단위계획 및 특별계획구역 세부개발계획) 결정(변경)(안) 재열람공고 알림#2026-02-19",
+      "배봉산 숲속 폭포 미디어파사드 상영 안내#2026-02-13",
+      "동의서 번호부여 및 구역공개(전농동 134-1번지 일대 신속통합기획 주택정비형재개발사업)#2026-02-06",
+      "신속통합기획 주택정비형 재개발사업 후보지 신청 접수 알림(용두동 39번지 일대)#2025-12-09",
+      "도시관리계획(동부화물터미널 지구단위계획 및 특별계획구역 세부개발계획) 결정(변경)(안) 열람공고 알림#2025-11-20",
+      "고려대 역세권 장기전세주택 동의서 번호부여 및 구역 공개(제기동 1145-8번지 일대)#2025-10-27",
+      "전농동 152-65번지 일대 신속통합기획 주택재개발사업 후보지 자문 결과 안내#2025-09-16",
+      "동의서 번호부여 및 구역공개(전농동 206-21번지 일대 신속통합기획 주택재개발사업)#2025-09-09",
+      "제2종 및 제3종 일반주거지역 한시적 용적률 상향에 따른 위반건축물 해소 건축사 무료상담#2025-08-22"
+    ]
   },
   "https://www.gangdong.go.kr/web/newportal/bbs/b_111": {
     "name": "강동구",
@@ -118,8 +128,7 @@
   },
   "https://www.ydp.go.kr/www/selectBbsNttList.do?key=2848&bbsNo=40&integrDeptCode=&searchCtgry=&pageUnit=10&searchCnd=SJ&searchKrwd=": {
     "name": "영등포구",
-    "keys": [],
-    "error": true
+    "keys": []
   },
   "https://www.gwangjin.go.kr/portal/bbs/B0000001/list.do?pageIndex=1&menuNo=200190&deptId=&searchCnd=1&searchWrd=&sdate=&edate=": {
     "name": "광진구",
@@ -135,8 +144,7 @@
   },
   "https://www.yangcheon.go.kr/site/yangcheon/ex/seol/seolCollectList.do": {
     "name": "양천구",
-    "keys": [],
-    "error": true
+    "keys": []
   },
   "https://eminwon.seocho.go.kr/emwp/jsp/ofr/OfrNotAncmtLSub.jsp?not_ancmt_se_code=01,02,04": {
     "name": "서초구 고시공고",
