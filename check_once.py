@@ -11,6 +11,8 @@ blogs.txt에 적힌 블로그들의 RSS를 확인해서, 처음 보는 글이 �
 import json
 import logging
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
@@ -29,6 +31,10 @@ logger = logging.getLogger(__name__)
 BLOGS_FILE = "blogs.txt"
 SEEN_FILE = "seen.json"
 SEEN_LINKS_KEEP = 200  # 블로그별로 보관할 확인한 글 링크 수
+FETCH_WORKERS = 10  # 동시에 확인할 블로그 수
+SEND_INTERVAL = 1.0  # 텔레그램 메시지 발송 간 최소 간격(초)
+
+_last_send_at = 0.0
 
 
 def load_blog_ids():
@@ -60,12 +66,44 @@ def save_seen(seen):
 
 
 def send_message(token, chat_id, text):
-    response = requests.post(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        json={"chat_id": chat_id, "text": text},
-        timeout=30,
-    )
-    response.raise_for_status()
+    """텔레그램 메시지를 보낸다. 발송 간격을 지키고, 요청 제한(429)이면 기다렸다 재시도."""
+    global _last_send_at
+    wait = _last_send_at + SEND_INTERVAL - time.time()
+    if wait > 0:
+        time.sleep(wait)
+    for attempt in range(3):
+        response = requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": text},
+            timeout=30,
+        )
+        if response.status_code == 429:
+            retry_after = 5
+            try:
+                retry_after = response.json()["parameters"]["retry_after"]
+            except Exception:
+                pass
+            logger.warning("telegram rate limit, retrying in %ss", retry_after)
+            time.sleep(retry_after + 1)
+            continue
+        response.raise_for_status()
+        break
+    _last_send_at = time.time()
+
+
+def fetch_all(blog_ids):
+    """모든 블로그의 RSS를 동시에 가져온다. 실패한 블로그는 None."""
+    results = {}
+    with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as executor:
+        futures = {executor.submit(naver_blog.fetch_posts, bid): bid for bid in blog_ids}
+        for future in as_completed(futures):
+            blog_id = futures[future]
+            try:
+                results[blog_id] = future.result()
+            except Exception as e:
+                logger.warning("failed to fetch %s: %s", blog_id, e)
+                results[blog_id] = None
+    return results
 
 
 def main():
@@ -78,33 +116,29 @@ def main():
         return
 
     seen = load_seen()
+    results = fetch_all(blog_ids)
+
+    started = []  # 이번에 새로 감시를 시작한 블로그 이름들
+    failed = []  # 새로 추가됐지만 가져오지 못한 블로그 아이디들
     try:
         for blog_id in blog_ids:
             entry = seen.get(blog_id)
-            try:
-                blog_name, posts = naver_blog.fetch_posts(blog_id)
-            except Exception as e:
-                logger.warning("failed to fetch %s: %s", blog_id, e)
+            result = results.get(blog_id)
+
+            if result is None:
                 if entry is None:
                     # 새로 추가된 블로그가 잘못된 주소일 수 있으니 한 번만 알려준다
-                    send_message(
-                        token, chat_id,
-                        f"⚠️ '{blog_id}' 블로그 정보를 가져오지 못했습니다. "
-                        "blogs.txt에 적은 주소를 확인해주세요.",
-                    )
+                    failed.append(blog_id)
                     seen[blog_id] = {"name": blog_id, "links": [], "error": True}
                 continue
 
+            blog_name, posts = result
             links = [p["link"] for p in posts]
 
             if entry is None or entry.get("error"):
                 # 새로 등록된 블로그: 기존 글은 알림 없이 기준선으로 저장
                 seen[blog_id] = {"name": blog_name, "links": links[:SEEN_LINKS_KEEP]}
-                send_message(
-                    token, chat_id,
-                    f"✅ '{blog_name}' 블로그 감시를 시작했습니다. "
-                    "새 글이 올라오면 알려드릴게요.",
-                )
+                started.append(blog_name)
                 logger.info("started watching %s (%s)", blog_name, blog_id)
                 continue
 
@@ -120,6 +154,28 @@ def main():
 
             entry["name"] = blog_name
             entry["links"] = entry["links"][:SEEN_LINKS_KEEP]
+
+        if started:
+            if len(started) == 1:
+                text = (
+                    f"✅ '{started[0]}' 블로그 감시를 시작했습니다. "
+                    "새 글이 올라오면 알려드릴게요."
+                )
+            else:
+                text = (
+                    f"✅ 새 블로그 {len(started)}개 감시를 시작했습니다. "
+                    f"(현재 총 {len(blog_ids)}개 감시 중) 새 글이 올라오면 알려드릴게요."
+                )
+            send_message(token, chat_id, text)
+
+        if failed:
+            shown = ", ".join(failed[:20])
+            more = f" 외 {len(failed) - 20}개" if len(failed) > 20 else ""
+            send_message(
+                token, chat_id,
+                f"⚠️ 다음 블로그의 정보를 가져오지 못했습니다: {shown}{more}\n"
+                "blogs.txt에 적은 주소를 확인해주세요.",
+            )
 
         # blogs.txt에서 지워진 블로그의 기록은 정리 (다시 추가하면 새로 시작)
         seen = {bid: seen[bid] for bid in blog_ids if bid in seen}
