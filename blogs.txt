@@ -5,3 +5,4 @@
 # 예시:
 # https://blog.naver.com/naver_diary
 # myblogid
+https://m.blog.naver.com/cysft
