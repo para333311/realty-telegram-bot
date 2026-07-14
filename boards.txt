@@ -5,14 +5,25 @@
 # 특정 단어가 든 공고만 받고 싶으면 맨 뒤에 | 키워드1,키워드2 를 붙일 수 있습니다.
 # ('#'으로 시작하는 줄은 무시됩니다)
 
+# ── 서울시 ──
 서울시결재문서 | https://opengov.seoul.go.kr/sanction/list | 재개발,신속통합,일대,후보지,수권,정비계획,동의서
+
+# ── 전용 정비사업/도시정비 게시판 (전체 알림) ──
 강남구 | https://www.gangnam.go.kr/board/union6/list.do?mid=ID02_01130505
 동작구 | https://www.dongjak.go.kr/portal/bbs/B0001387/list.do?menuNo=201575
-마포구 | https://www.mapo.go.kr/site/main/board/notice/list?baCommSelec=false&sc=&sv=%EC%8B%A0%EC%86%8D%ED%86%B5%ED%95%A9&pageSize=10
 용산구 | https://www.yongsan.go.kr/portal/bbs/B0000170/list.do?menuNo=200848&deptId=3020154&sdate=&edate=&searchCnd=1&searchWrd=
-성동구 | https://www.sd.go.kr/main/selectBbsNttList.do?key=1307&bbsNo=166&integrDeptCode=&searchCtgry=&searchCnd=SJ&searchKrwd=%EB%8F%99%EC%9D%98%EC%84%9C
 종로구 | https://www.jongno.go.kr/portal/bbs/selectBoardList.do?bbsId=BBSMSTR_000000000175&menuId=400675&menuNo=400675
 동대문구 | https://www.ddm.go.kr/www/selectBbsNttList.do?bbsNo=38&key=904&searchCtgry=%EB%8F%84%EC%8B%9C%EC%A0%95%EB%B9%84
-영등포구 | https://www.ydp.go.kr/www/selectBbsNttList.do?key=2848&bbsNo=40&integrDeptCode=&searchCtgry=&pageUnit=10&searchCnd=SJ&searchKrwd=%EC%8B%A0%EC%86%8D%ED%86%B5%ED%95%A9
-광진구 | https://www.gwangjin.go.kr/portal/bbs/B0000001/list.do?pageIndex=1&menuNo=200190&deptId=&searchCnd=1&searchWrd=%EB%B2%88%ED%98%B8%EB%B6%80%EC%97%AC&sdate=&edate=
 강동구 | https://www.gangdong.go.kr/web/newportal/bbs/b_111
+
+# ── 고시공고 게시판 + 키워드 필터 ──
+마포구 | https://www.mapo.go.kr/site/main/board/notice/list?baCommSelec=false&sc=&sv=&pageSize=10 | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
+성동구 | https://www.sd.go.kr/main/selectBbsNttList.do?key=1307&bbsNo=166&integrDeptCode=&searchCtgry=&searchCnd=SJ&searchKrwd= | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
+영등포구 | https://www.ydp.go.kr/www/selectBbsNttList.do?key=2848&bbsNo=40&integrDeptCode=&searchCtgry=&pageUnit=10&searchCnd=SJ&searchKrwd= | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
+광진구 | https://www.gwangjin.go.kr/portal/bbs/B0000001/list.do?pageIndex=1&menuNo=200190&deptId=&searchCnd=1&searchWrd=&sdate=&edate= | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
+중구 | https://www.junggu.seoul.kr/content.do?cmsid=14232 | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
+서대문구 | https://www.sdm.go.kr/news/notice/notice.do | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
+양천구 | https://www.yangcheon.go.kr/site/yangcheon/ex/seol/seolCollectList.do | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
+서초구 고시공고 | https://eminwon.seocho.go.kr/emwp/jsp/ofr/OfrNotAncmtLSub.jsp?not_ancmt_se_code=01,02,04 | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
+서초구 도시계획 | https://www.seocho.go.kr/site/seocho/ex/bbs/List.do?cbIdx=270 | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
+송파구 | https://www.songpa.go.kr/www/sub.do?key=2776 | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
