@@ -34,7 +34,7 @@ jobs:
 
       - name: 구청 게시판 새 공고 확인 및 알림 전송
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.BOARD_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python check_boards.py
 
