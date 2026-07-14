@@ -63,20 +63,37 @@ def load_boards():
             keywords = []
             if len(parts) >= 3 and parts[2]:
                 keywords = [k.strip() for k in parts[2].split(",") if k.strip()]
-            boards.append({"name": parts[0], "url": parts[1], "keywords": keywords})
+            # 4번째 칸: 부서 필터 (제목이 아니라 글 행 전체 텍스트에서 찾음)
+            row_keywords = []
+            if len(parts) >= 4 and parts[3]:
+                row_keywords = [k.strip() for k in parts[3].split(",") if k.strip()]
+            boards.append({
+                "name": parts[0], "url": parts[1],
+                "keywords": keywords, "row_keywords": row_keywords,
+            })
     return boards
 
 
-def scrape_board(url, keywords):
+def scrape_board(url, keywords, row_keywords=(), name=""):
     """게시판 목록에서 (제목, 링크, 날짜) 목록을 추출한다. jejeboard의 검증된 로직."""
-    response = requests.get(
-        url,
-        headers={"User-Agent": USER_AGENT, "Referer": url},
-        verify=False,
-        timeout=20,
-    )
-    response.encoding = "utf-8"
-    response.raise_for_status()
+    last_error = None
+    for attempt in range(2):  # 느린 사이트를 위해 1회 재시도
+        try:
+            response = requests.get(
+                url,
+                headers={"User-Agent": USER_AGENT, "Referer": url},
+                verify=False,
+                timeout=(15, 40),
+            )
+            response.encoding = "utf-8"
+            response.raise_for_status()
+            break
+        except Exception as e:
+            last_error = e
+            if attempt == 0:
+                logger.info("retrying %s after error: %s", name or url, e)
+    else:
+        raise last_error
     soup = BeautifulSoup(response.text, "html.parser")
 
     rows = soup.select(
@@ -99,6 +116,12 @@ def scrape_board(url, keywords):
         if keywords and not any(k in title for k in keywords):
             continue
 
+        # 부서 필터: 제목이 아닌 행 전체 텍스트(부서명 칸 포함)에서 찾는다
+        if row_keywords:
+            row_text = row.get_text(" ", strip=True)
+            if not any(k in row_text for k in row_keywords):
+                continue
+
         link = title_elem.get("href", "")
         if not link or "#" in link or "javascript" in link:
             parent_a = row.find_parent("a") or row.find("a")
@@ -116,6 +139,8 @@ def scrape_board(url, keywords):
 
         posts.append({"title": title, "link": full_link, "date": date_val})
 
+    # 0건일 때 '읽기 실패'인지 '필터에 걸린 글이 없는 것'인지 구분할 수 있게 남긴다
+    logger.info("%s: 행 %d개 파싱, 필터 통과 %d건", name or url, len(rows), len(posts))
     return posts
 
 
@@ -141,7 +166,10 @@ def fetch_all(boards):
     results = {}
     with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as executor:
         futures = {
-            executor.submit(scrape_board, b["url"], b["keywords"]): b["url"] for b in boards
+            executor.submit(
+                scrape_board, b["url"], b["keywords"], b["row_keywords"], b["name"]
+            ): b["url"]
+            for b in boards
         }
         for future in as_completed(futures):
             url = futures[future]
