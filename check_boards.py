@@ -154,13 +154,13 @@ def fetch_all(boards):
 
 
 def main():
-    token = os.environ["TELEGRAM_BOT_TOKEN"]
-    chat_id = os.environ["TELEGRAM_CHAT_ID"]
-
     boards = load_boards()
     if not boards:
         logger.info("boards.txt에 등록된 게시판이 없습니다.")
         return
+
+    token = os.environ["TELEGRAM_BOT_TOKEN"]
+    chat_id = os.environ["TELEGRAM_CHAT_ID"]
 
     seen = load_seen()
     results = fetch_all(boards)
