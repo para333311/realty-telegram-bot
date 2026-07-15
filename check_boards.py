@@ -137,9 +137,72 @@ def scrape_seoul_api(url, keywords, row_keywords=(), name=""):
     return posts
 
 
+def scrape_urban(url, keywords, row_keywords=(), name=""):
+    """서울도시공간포털(urban.seoul.go.kr)의 JSON 목록을 읽는다.
+
+    주소의 쿼리스트링(searchGubun 등)은 POST 본문으로 변환되어 전송된다.
+    """
+    from urllib.parse import parse_qsl, urlparse
+
+    parsed = urlparse(url)
+    body = {"pageNo": 1, "pageSize": 15}
+    for k, v in parse_qsl(parsed.query):
+        body[k] = int(v) if v.isdigit() else v
+    endpoint = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+
+    response = requests.post(
+        endpoint,
+        json=body,
+        headers={"User-Agent": USER_AGENT,
+                 "Referer": "https://urban.seoul.go.kr/view/html/PMNU4010100001"},
+        timeout=(15, 40),
+        verify=False,
+    )
+    response.raise_for_status()
+    rows = response.json().get("content") or []
+
+    posts = []
+    for row in rows:
+        values = {k: str(v).strip() for k, v in row.items()
+                  if isinstance(v, (str, int, float)) and str(v).strip()}
+        title = values.get("title") or values.get("subject") or ""
+        if len(title) < 3:
+            continue
+
+        if keywords and not any(k in title for k in keywords):
+            continue
+        if row_keywords:
+            row_text = " ".join(
+                v for k, v in values.items()
+                if not any(x in k.upper() for x in ("CONTENT", "CONTTXT"))
+            )
+            if not any(k in row_text for k in row_keywords):
+                continue
+
+        if values.get("announceCode"):  # 열람공고 상세
+            link = ("https://urban.seoul.go.kr/view/html/PMNU4010200001"
+                    f"?announceCode={values['announceCode']}")
+        else:  # 결정고시 등은 목록 페이지로 안내
+            link = "https://urban.seoul.go.kr/view/html/PMNU4030100001"
+
+        date_val = ""
+        for key in ("announceDate", "noticeDate", "createDatetime"):
+            m = DATE_RE.search(values.get(key, ""))
+            if m:
+                date_val = m.group()
+                break
+
+        posts.append({"title": title, "link": link, "date": date_val})
+
+    logger.info("%s: urban 행 %d개, 필터 통과 %d건", name or url, len(rows), len(posts))
+    return posts
+
+
 def scrape_board(url, keywords, row_keywords=(), name=""):
     if "openapi.seoul.go.kr" in url:
         return scrape_seoul_api(url, keywords, row_keywords, name)
+    if "urban.seoul.go.kr" in url and ".json" in url:
+        return scrape_urban(url, keywords, row_keywords, name)
     """게시판 목록에서 (제목, 링크, 날짜) 목록을 추출한다. jejeboard의 검증된 로직."""
     last_error = None
     for attempt in range(2):  # 느린 사이트를 위해 1회 재시도
@@ -193,7 +256,10 @@ def scrape_board(url, keywords, row_keywords=(), name=""):
             if parent_a:
                 link = parent_a.get("href", "")
 
-        full_link = urljoin(url, link) if link else url
+        if not link or "javascript" in link:
+            full_link = url  # 자바스크립트로만 열리는 글은 게시판 주소로 안내
+        else:
+            full_link = urljoin(url, link)
 
         date_val = ""
         for elem in row.select("td, span, .date, .reg_date, .day"):
