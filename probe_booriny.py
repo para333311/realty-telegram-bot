@@ -1,5 +1,6 @@
-"""(임시) booriny 필터 설정(다세대/초기 코드) + 매물 API 파라미터 최종. 조사 후 삭제."""
+"""(임시) booriny 매물 상세/단계 필드 확인. 조사 후 삭제."""
 
+import json
 import os
 import re
 
@@ -18,64 +19,45 @@ S.post(BASE + "/api/auth/v2/login",
        json={"email": os.environ.get("BOORINY_ID", ""), "password": os.environ.get("BOORINY_PW", "")},
        timeout=30, verify=False)
 
-home = S.get(BASE + "/", timeout=20, verify=False).text
-scripts = [s if s.startswith("http") else BASE + s
-           for s in re.findall(r'<script[^>]+src="([^"]+)"', home)]
+r = S.get(BASE + "/api/listings", params={"limit": 3}, timeout=30, verify=False)
+listings = r.json().get("data", {}).get("listings", [])
+lid = listings[0]["id"] if listings else None
+atcl = listings[0].get("atcl_no") if listings else None
+print("샘플 id:", lid, "atcl_no:", atcl)
 
-print("===== 1) 전체 JS에서 필터 라벨↔값 매핑 =====")
-for js in scripts:
-    try:
-        t = S.get(js, timeout=20, verify=False).text
-    except Exception:
-        continue
-    for label in ("다세대", "초기", "중기", "후기", "단독/다가구", "5억", "최저가"):
-        idx = 0
-        while True:
-            i = t.find(label, idx)
-            if i < 0:
-                break
-            seg = t[max(0, i-90):i+50]
-            print(f"  [{js.rsplit('/',1)[1][:18]}] '{label}': ...{seg!r}...")
-            idx = i + 1
-            break  # 파일당 라벨 첫 매치만
-
-print("\n===== 2) /api/listings 호출부 + URLSearchParams 키 =====")
-for js in scripts:
-    try:
-        t = S.get(js, timeout=20, verify=False).text
-    except Exception:
-        continue
-    if "listings" not in t:
-        continue
-    for m in re.finditer(r"api/listings", t):
-        seg = t[m.start()-20:m.end()+600]
-        keys = set(re.findall(r'(?:set|append|get)\(["\']([a-zA-Z_][a-zA-Z0-9_]{1,25})["\']', seg))
-        keys |= set(re.findall(r'([a-z_]{3,25})=\$?\{?', seg))
-        print(f"  [{js.rsplit('/',1)[1][:18]}] listings 근처 키: {sorted(k for k in keys if len(k)<26)[:30]}")
-
-print("\n===== 3) 후보 파라미터 실제 효과 테스트 =====")
-def count(params):
-    try:
-        return S.get(BASE + "/api/listings", params={**params, "limit": 1},
-                     timeout=20, verify=False).json().get("data", {}).get("count")
-    except Exception as e:
-        return f"ERR {e}"
-
-print("  기준 (limit=1):", count({}))
-for p in ({"rlet_tp_cd": "C02"}, {"realEstateType": "다세대"}, {"type": "다세대"},
-          {"stage": "초기"}, {"step": "1"}, {"phase": "early"}, {"redevelopment_stage": "초기"},
-          {"division": "마포구"}, {"gu": "마포구"}, {"sido": "서울시", "gugun": "마포구"},
-          {"max_price": 500000000}, {"maxPrice": 500000000}, {"price_max": 500000000}):
-    print(f"  {p} -> count={count(p)}")
-
-print("\n===== 4) 구역-단계 매핑용 별도 엔드포인트 탐색 =====")
-for ep in ("/api/redevelopment-zones", "/api/zones", "/api/cortars", "/api/regions",
-           "/api/redevelopment/stages", "/api/areas", "/api/districts"):
+print("\n===== 1) 매물 상세 엔드포인트 (단계 필드 있나?) =====")
+for ep in (f"/api/listings/{lid}", f"/api/listing/{lid}", f"/api/maemul/{lid}",
+           f"/api/listings/{atcl}"):
     try:
         rr = S.get(BASE + ep, timeout=15, verify=False)
-        if rr.status_code != 404:
-            print(f"  {ep} -> {rr.status_code}: {rr.text[:200]!r}")
+        if rr.status_code == 200:
+            d = rr.json()
+            print(f"  {ep} -> 200, 키: {sorted(d.get('data', d).keys())[:40] if isinstance(d.get('data', d), dict) else type(d)}")
+            s = json.dumps(d, ensure_ascii=False)
+            for kw in ("stage", "단계", "초기", "중기", "후기", "step", "phase", "progress"):
+                if kw in s:
+                    i = s.find(kw)
+                    print(f"    '{kw}' 발견: ...{s[max(0,i-50):i+50]}...")
+        else:
+            print(f"  {ep} -> {rr.status_code}")
     except Exception as e:
         print(f"  {ep} -> ERR {e}")
+
+print("\n===== 2) division 파라미터가 서버 필터인지 (limit=100 분포) =====")
+from collections import Counter
+r2 = S.get(BASE + "/api/listings", params={"limit": 100, "division": "마포구"}, timeout=30, verify=False)
+ls2 = r2.json().get("data", {}).get("listings", [])
+print("  division=마포구 요청 시 실제 구 분포:", Counter(x.get("division") for x in ls2).most_common(5))
+
+print("\n===== 3) 페이지네이션 파라미터 =====")
+for p in ({"limit": 5, "offset": 100}, {"limit": 5, "page": 2}, {"limit": 5, "cursor": "1"}):
+    rr = S.get(BASE + "/api/listings", params=p, timeout=20, verify=False)
+    ls = rr.json().get("data", {}).get("listings", [])
+    print(f"  {p} -> {len(ls)}건, 첫 id={ls[0]['id'] if ls else None}")
+
+print("\n===== 4) 재개발 구역/단계 데이터 (지도용) =====")
+r = S.get(BASE + "/", timeout=20, verify=False).text
+apis = set(re.findall(r"/api/[A-Za-z0-9_/\-]{3,45}", r))
+print("  홈 참조 API 전체:", sorted(apis))
 
 print("\n===== 끝 =====")
