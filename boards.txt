@@ -12,7 +12,8 @@
 # ── 서울시 ──
 서울시보도자료 | http://openapi.seoul.go.kr:8088/{KEY}/json/SeoulNewsList/1/50/ | | 공동주택과,신속통합기획과,도시계획과,주거정비과,전략주택공급과
 서울시보 | https://www.seoul.go.kr/func/seoulsibo/list.do
-도시계획 열람공고 | https://urban.seoul.go.kr/wrtanc/getWrtancList.json?searchGubun=ing&pageSize=15 | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지,모아타운,주택
+# 열람공고(주민의견제출): 14개 구 전체 모니터링 (제목 키워드 없이 구로만 필터)
+도시계획 열람공고 | https://urban.seoul.go.kr/wrtanc/getWrtancList.json?searchGubun=ing&pageSize=100 | | 강남구,강동구,광진구,동대문구,동작구,마포구,서대문구,서초구,성동구,송파구,영등포구,용산구,종로구,중구
 # 결정고시: 4개 유형(결정고시·지구단위계획·정비사업구역계·도시개발사업 관련) 제목 키워드 + 14개 구(구 이름) 필터
 도시계획 결정고시 | https://urban.seoul.go.kr/ntfc/getNtfcList.json?pageSize=100 | 지구단위계획,정비사업,정비구역,정비계획,재개발,재건축,도시개발,모아타운,신속통합,주택재개발,주택재건축 | 강남구,강동구,광진구,동대문구,동작구,마포구,서대문구,서초구,성동구,송파구,영등포구,용산구,종로구,중구
 # 서울시결재문서(opengov)는 해외 서버 차단 + API 부재로 감시 불가하여 비활성화
