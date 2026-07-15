@@ -38,6 +38,8 @@
 
 확인한 공고는 `seen_boards.json`에 자동 커밋됩니다.
 
+서울 열린데이터광장 OpenAPI(`openapi.seoul.go.kr`), 서울도시공간포털 JSON(`urban.seoul.go.kr`), 서울시 도시·건축위원회(`commission.eseoul.go.kr`) 등은 사이트별 전용 파서로 자동 처리됩니다.
+
 일부 관공서 사이트는 해외 서버(GitHub) 접속을 차단하므로, 그런 곳은 [서울 열린데이터광장](https://data.seoul.go.kr) OpenAPI 주소를 대신 사용합니다. API 주소의 `{KEY}` 자리에는 `SEOUL_API_KEY` 시크릿 값이 들어갑니다 — 열린데이터광장에서 무료 회원가입 후 인증키를 발급받아 등록하세요. (미등록 시 테스트용 sample 키로 동작하며 조회 건수가 제한됩니다.)
 
 ### 부리니(booriny.com) 재개발 매물 알림

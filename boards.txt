@@ -19,16 +19,16 @@
 # 서울시결재문서 | https://opengov.seoul.go.kr/sanction/list | 재개발,신속통합,일대,후보지,수권,정비계획,동의서
 
 # ── 서울시 도시·건축위원회 10개 위원회 일정·결과 (commission.eseoul.go.kr) ──
-위원회일정 CM01 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM01
-위원회일정 CM02 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM02
-위원회일정 CM03 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM03
-위원회일정 CM05 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM05
-위원회일정 CM07 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM07
-위원회일정 CM08 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM08
-위원회일정 CM09 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM09
-위원회일정 CM10 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM10
-위원회일정 CM11 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM11
-위원회일정 CM12 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM12
+도시계획위원회 일정·결과 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM01
+도시건축공동위원회 일정·결과 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM02
+도시재정비위원회 일정·결과 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM03
+건축위원회 일정·결과 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM05
+신속통합기획자문단 일정·결과 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM07
+정비사업통합심의위원회 일정·결과 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM08
+교통영향평가위원회 일정·결과 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM09
+소규모주택정비통합심의위원회 일정·결과 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM10
+공공지원민간임대주택통합심의위원회 일정·결과 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM11
+공공주택통합심의위원회 일정·결과 | https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM12
 
 # ── 전용 정비사업/도시정비 게시판 (전체 알림) ──
 강남구 | https://www.gangnam.go.kr/board/union6/list.do?mid=ID02_01130505
