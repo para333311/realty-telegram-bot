@@ -150,18 +150,20 @@
   },
   "http://openapi.seoul.go.kr:8088/{KEY}/json/SeoulNewsList/1/50/": {
     "name": "서울시보도자료",
-    "keys": [],
-    "error": true
+    "keys": [
+      "[Shorts] 멈춰버린 현저동, 모아타운과 함께 다시 시간이 흐르기 시작했습니다.(서대문구 현저동 1-5일대 모아타운)#2026/07/6"
+    ]
   },
   "http://openapi.seoul.go.kr:8088/{KEY}/json/YdpNewsNoticeList/1/30/": {
     "name": "영등포구",
-    "keys": [],
-    "error": true
+    "keys": [
+      "7월 정비사업 아카데미 특강 안내(영등포 재개발재건축 상담센터)#2026.07.08",
+      "주택건설공사 감리자(건축) 입찰 및 개찰 결과(신길동 4377일원 가로주택정비사업)#2026.07.08"
+    ]
   },
   "http://openapi.seoul.go.kr:8088/{KEY}/json/SeochoNewsNoticeList/1/30/": {
     "name": "서초구 공지",
-    "keys": [],
-    "error": true
+    "keys": []
   },
   "https://www.seoul.go.kr/func/seoulsibo/list.do": {
     "name": "서울시보",
