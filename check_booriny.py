@@ -5,8 +5,10 @@ booriny.com에 로그인해 재개발 구역 내 최신 매물을 확인하고,
 확인한 매물 id는 seen_booriny.json에 저장한다.
 
 필터:
+- 재개발구역 매물만 (is_redevelopment) — /api/listings는 네이버 전체 매물을
+  반환하므로 이 필터가 없으면 재개발구역이 아닌 매물까지 섞여 나온다(핵심).
 - 14개 구 (강남·강동·광진·동대문·동작·마포·서대문·서초·성동·송파·영등포·용산·종로·중구)
-- 다세대(빌라/연립) 유형만
+- 다세대(빌라/연립, rlet_tp_cd C02) 유형만
 - 매매가 5억 이하
 
 필요한 환경변수:
@@ -14,8 +16,9 @@ booriny.com에 로그인해 재개발 구역 내 최신 매물을 확인하고,
 - BOORINY_BOT_TOKEN : 매물 알림용 텔레그램 봇 토큰
 - TELEGRAM_CHAT_ID : 알림을 받을 채팅 ID (다른 봇과 공용)
 
-주의: booriny는 "초기/중기/후기" 단계 정보를 API로 제공하지 않으므로
-단계 필터는 적용하지 못한다(구/유형/가격만 적용).
+참고: redevelopment_stage 값은 "초기/중기/후기"가 아니라 세부 진행단계
+(조합설립인가·대상지선정·안전진단·주민설명회 등)라 단계로 거르지는 않고,
+알림 메시지에 구역명·유형·단계를 함께 표시만 한다.
 """
 
 import json
@@ -50,8 +53,7 @@ GU_ALLOW = {
     "서초구", "성동구", "송파구", "영등포구", "용산구", "종로구", "중구",
 }
 MAX_PRICE = 500_000_000            # 5억 이하
-DASEDAE_TYPE_CODES = {"C02"}       # 다세대/빌라/연립 (booriny rlet_tp_cd)
-DASEDAE_NAME_HINTS = ("다세대", "빌라", "연립")
+DASEDAE_TYPE_CODES = {"C02"}       # 다세대(빌라/연립) — booriny rlet_tp_cd
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
@@ -69,21 +71,22 @@ def login(session):
         raise RuntimeError("booriny 로그인 실패 — 아이디/비밀번호를 확인하세요")
 
 
-def fetch_listings(session, limit=100):
-    r = session.get(BASE + "/api/listings", params={"limit": limit}, timeout=(15, 40), verify=False)
+def fetch_listings(session, limit=2000):
+    # /api/listings는 재개발구역 매물뿐 아니라 네이버 전체 매물을 반환하고
+    # 서버측 필터 파라미터가 먹지 않으므로, 넉넉히 받아 클라이언트에서 거른다.
+    r = session.get(BASE + "/api/listings", params={"limit": limit}, timeout=(15, 60), verify=False)
     r.raise_for_status()
     return r.json().get("data", {}).get("listings", [])
 
 
-def is_dasedae(item):
-    if item.get("rlet_tp_cd") in DASEDAE_TYPE_CODES:
-        return True
-    nm = item.get("atcl_nm") or ""
-    return any(h in nm for h in DASEDAE_NAME_HINTS)
-
-
 def matches(item):
+    # 재개발구역 매물만 (booriny 사이트가 보여주는 대상). 이 필터가 핵심.
+    if not item.get("is_redevelopment"):
+        return False
     if item.get("division") not in GU_ALLOW:
+        return False
+    # 다세대(C02)만
+    if item.get("rlet_tp_cd") not in DASEDAE_TYPE_CODES:
         return False
     # 매매(trad_tp_cd A1)만, 전월세 제외
     if item.get("trad_tp_cd") not in (None, "", "A1"):
@@ -94,7 +97,7 @@ def matches(item):
         return False
     if prc <= 0 or prc > MAX_PRICE:
         return False
-    return is_dasedae(item)
+    return True
 
 
 def format_message(item):
@@ -102,15 +105,21 @@ def format_message(item):
     eok = prc / 100_000_000
     gu = item.get("division") or ""
     dong = item.get("sector") or ""
-    nm = item.get("atcl_nm") or "매물"
+    zone = item.get("redevelopment_area") or item.get("atcl_nm") or "매물"
+    rtype = item.get("redevelopment_type") or ""
+    stage = item.get("redevelopment_stage") or ""
+    badge = " · ".join(x for x in (rtype, stage) if x)
     spc = item.get("spc1")
-    area = f" · {spc}㎡" if spc else ""
+    spc_txt = f" · {spc}㎡" if spc and str(spc) not in ("0", "0.00") else ""
     atcl_no = item.get("atcl_no")
     # booriny는 네이버 매물을 취합 — 네이버부동산 상세로 연결
     link = f"https://m.land.naver.com/article/info/{atcl_no}" if atcl_no else BASE
+    head = f"🏠 [부리니 재개발매물] {gu} {dong}"
+    zone_line = f"{zone}" + (f" ({badge})" if badge else "")
     return (
-        f"🏠 [부리니 매물] {gu} {dong}\n"
-        f"{nm} · 매매 {eok:.2f}억{area}\n"
+        f"{head}\n"
+        f"{zone_line}\n"
+        f"다세대 · 매매 {eok:.2f}억{spc_txt}\n"
         f"{link}"
     )
 
@@ -149,7 +158,7 @@ def main():
     logger.info("받은 매물 %d건", len(listings))
 
     matched = [x for x in listings if matches(x)]
-    logger.info("필터 통과(14구·다세대·5억이하) %d건", len(matched))
+    logger.info("필터 통과(재개발구역·14구·다세대·5억이하) %d건", len(matched))
 
     seen = load_seen()
     seen_set = set(seen)
