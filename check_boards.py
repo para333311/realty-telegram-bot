@@ -213,11 +213,63 @@ def scrape_urban(url, keywords, row_keywords=(), name=""):
     return posts
 
 
+def scrape_commission(url, keywords, row_keywords=(), name=""):
+    """서울시 도시건축위원회(commission.eseoul.go.kr) 일정·결과 목록을 읽는다.
+
+    각 회의는 <li>(a.CmitList) 안에 회차·위원회명(.col-left)과
+    개최일시(.col-right dd)·장소(.place dd)가 담겨 있다.
+    """
+    response = requests.get(
+        url,
+        headers={"User-Agent": USER_AGENT,
+                 "Referer": "https://commission.eseoul.go.kr/mainInitPlatForm.do"},
+        timeout=(15, 40),
+        verify=False,
+    )
+    response.encoding = "utf-8"
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    rows = soup.select("a.CmitList") or soup.select("ul.schdul-list li, .drop-box")
+    posts = []
+    for row in rows:
+        left = row.select_one(".col-left")
+        title = left.get_text(" ", strip=True) if left else ""
+        title = re.sub(r"^\d+\s+", "", title).strip()  # 앞 번호 제거
+        if len(title) < 5:
+            continue
+
+        date_val = ""
+        right = row.select_one(".col-right")
+        if right:
+            dd = right.select_one("dd")
+            if dd:
+                m = DATE_RE.search(dd.get_text(strip=True))
+                date_val = m.group() if m else dd.get_text(strip=True)
+        if not date_val:
+            m = DATE_RE.search(row.get_text(" ", strip=True))
+            date_val = m.group() if m else ""
+
+        place_el = row.select_one(".place dd")
+        place = place_el.get_text(" ", strip=True) if place_el else ""
+
+        if keywords and not any(k in title for k in keywords):
+            continue
+
+        display = f"{title} ({place})" if place else title
+        posts.append({"title": display, "link": url, "date": date_val})
+
+    logger.info("%s: 위원회 %d개, 통과 %d건", name or url, len(rows), len(posts))
+    return posts
+
+
 def scrape_board(url, keywords, row_keywords=(), name=""):
     if "openapi.seoul.go.kr" in url:
         return scrape_seoul_api(url, keywords, row_keywords, name)
     if "urban.seoul.go.kr" in url and ".json" in url:
         return scrape_urban(url, keywords, row_keywords, name)
+    if "commission.eseoul.go.kr" in url:
+        return scrape_commission(url, keywords, row_keywords, name)
     """게시판 목록에서 (제목, 링크, 날짜) 목록을 추출한다. jejeboard의 검증된 로직."""
     last_error = None
     for attempt in range(2):  # 느린 사이트를 위해 1회 재시도
