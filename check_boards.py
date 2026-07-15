@@ -77,6 +77,17 @@ def load_boards():
 TITLE_KEYS = ("TITLE", "POST_TITLE", "SJ", "NTT_SJ", "SUBJECT", "DOC_NM", "NEWS_TITLE", "TIT")
 DATE_RE = re.compile(r"\d{4}[-./]\d{1,2}[-./]\d{1,2}")
 
+# 서울 자치구 법정동 코드 앞 5자리 → 구 이름
+SEOUL_GU_CODE = {
+    "11110": "종로구", "11140": "중구", "11170": "용산구", "11200": "성동구",
+    "11215": "광진구", "11230": "동대문구", "11260": "중랑구", "11290": "성북구",
+    "11305": "강북구", "11320": "도봉구", "11350": "노원구", "11380": "은평구",
+    "11410": "서대문구", "11440": "마포구", "11470": "양천구", "11500": "강서구",
+    "11530": "구로구", "11545": "금천구", "11560": "영등포구", "11590": "동작구",
+    "11620": "관악구", "11650": "서초구", "11680": "강남구", "11710": "송파구",
+    "11740": "강동구",
+}
+
 
 def scrape_seoul_api(url, keywords, row_keywords=(), name=""):
     """서울 열린데이터광장 OpenAPI(JSON)에서 글 목록을 추출한다.
@@ -169,11 +180,19 @@ def scrape_urban(url, keywords, row_keywords=(), name=""):
         if len(title) < 3:
             continue
 
-        # 구 이름 추출: subject "노원구 | 2026-55" 또는 site "노원구청 도시관리과"
+        # 구 이름 추출
+        # - 결정고시(ntfc): subject "노원구 | 2026-55" 또는 site "노원구청 도시관리과"
+        # - 열람공고(wrtanc): readingArea/announceCode 앞 5자리(구 코드)로 판별
         gu = ""
         subj = values.get("subject", "")
         if "|" in subj:
             gu = subj.split("|", 1)[0].strip()
+        if not gu.endswith("구"):
+            for code_field in ("readingArea", "announceCode", "siteCode"):
+                code = values.get(code_field, "")[:5]
+                if code in SEOUL_GU_CODE:
+                    gu = SEOUL_GU_CODE[code]
+                    break
         if not gu:
             gu = values.get("site", "")
 
