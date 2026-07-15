@@ -40,12 +40,20 @@ jobs:
           SEOUL_API_KEY: ${{ secrets.SEOUL_API_KEY }}
         run: python check_boards.py
 
+      - name: 부리니 새 매물 확인 및 알림 전송
+        env:
+          BOORINY_ID: ${{ secrets.BOORINY_ID }}
+          BOORINY_PW: ${{ secrets.BOORINY_PW }}
+          BOORINY_BOT_TOKEN: ${{ secrets.BOORINY_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python check_booriny.py
+
       - name: 확인한 글 기록 저장
         run: |
-          if [ -n "$(git status --porcelain seen.json seen_boards.json)" ]; then
+          if [ -n "$(git status --porcelain seen.json seen_boards.json seen_booriny.json)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add seen.json seen_boards.json
+            git add seen.json seen_boards.json seen_booriny.json
             git commit -m "chore: 확인한 글 기록 업데이트"
             git pull --rebase origin "$GITHUB_REF_NAME"
             git push

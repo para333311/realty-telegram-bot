@@ -1,0 +1,184 @@
+"""GitHub Actions 등에서 주기적으로 1회 실행되는 booriny.com 매물 알림 스크립트.
+
+booriny.com에 로그인해 재개발 구역 내 최신 매물을 확인하고,
+아래 조건에 맞는 새 매물이 있으면 텔레그램으로 알림을 보낸다.
+확인한 매물 id는 seen_booriny.json에 저장한다.
+
+필터:
+- 14개 구 (강남·강동·광진·동대문·동작·마포·서대문·서초·성동·송파·영등포·용산·종로·중구)
+- 다세대(빌라/연립) 유형만
+- 매매가 5억 이하
+
+필요한 환경변수:
+- BOORINY_ID / BOORINY_PW : booriny.com 로그인 이메일/비밀번호
+- BOORINY_BOT_TOKEN : 매물 알림용 텔레그램 봇 토큰
+- TELEGRAM_CHAT_ID : 알림을 받을 채팅 ID (다른 봇과 공용)
+
+주의: booriny는 "초기/중기/후기" 단계 정보를 API로 제공하지 않으므로
+단계 필터는 적용하지 못한다(구/유형/가격만 적용).
+"""
+
+import json
+import logging
+import os
+import time
+
+import requests
+import urllib3
+
+from check_once import send_message
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+BASE = "https://booriny.com"
+SEEN_FILE = "seen_booriny.json"
+SEEN_KEEP = 2000
+
+# ── 필터 조건 ──
+GU_ALLOW = {
+    "강남구", "강동구", "광진구", "동대문구", "동작구", "마포구", "서대문구",
+    "서초구", "성동구", "송파구", "영등포구", "용산구", "종로구", "중구",
+}
+MAX_PRICE = 500_000_000            # 5억 이하
+DASEDAE_TYPE_CODES = {"C02"}       # 다세대/빌라/연립 (booriny rlet_tp_cd)
+DASEDAE_NAME_HINTS = ("다세대", "빌라", "연립")
+
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+
+
+def login(session):
+    email = os.environ["BOORINY_ID"]
+    pw = os.environ["BOORINY_PW"]
+    r = session.post(
+        BASE + "/api/auth/v2/login",
+        json={"email": email, "password": pw},
+        timeout=(15, 30), verify=False,
+    )
+    r.raise_for_status()
+    if not r.json().get("success"):
+        raise RuntimeError("booriny 로그인 실패 — 아이디/비밀번호를 확인하세요")
+
+
+def fetch_listings(session, limit=100):
+    r = session.get(BASE + "/api/listings", params={"limit": limit}, timeout=(15, 40), verify=False)
+    r.raise_for_status()
+    return r.json().get("data", {}).get("listings", [])
+
+
+def is_dasedae(item):
+    if item.get("rlet_tp_cd") in DASEDAE_TYPE_CODES:
+        return True
+    nm = item.get("atcl_nm") or ""
+    return any(h in nm for h in DASEDAE_NAME_HINTS)
+
+
+def matches(item):
+    if item.get("division") not in GU_ALLOW:
+        return False
+    # 매매(trad_tp_cd A1)만, 전월세 제외
+    if item.get("trad_tp_cd") not in (None, "", "A1"):
+        return False
+    try:
+        prc = int(item.get("prc") or 0)
+    except (TypeError, ValueError):
+        return False
+    if prc <= 0 or prc > MAX_PRICE:
+        return False
+    return is_dasedae(item)
+
+
+def format_message(item):
+    prc = int(item.get("prc") or 0)
+    eok = prc / 100_000_000
+    gu = item.get("division") or ""
+    dong = item.get("sector") or ""
+    nm = item.get("atcl_nm") or "매물"
+    spc = item.get("spc1")
+    area = f" · {spc}㎡" if spc else ""
+    atcl_no = item.get("atcl_no")
+    # booriny는 네이버 매물을 취합 — 네이버부동산 상세로 연결
+    link = f"https://m.land.naver.com/article/info/{atcl_no}" if atcl_no else BASE
+    return (
+        f"🏠 [부리니 매물] {gu} {dong}\n"
+        f"{nm} · 매매 {eok:.2f}억{area}\n"
+        f"{link}"
+    )
+
+
+def load_seen():
+    if not os.path.exists(SEEN_FILE):
+        return []
+    with open(SEEN_FILE, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_seen(seen_ids):
+    with open(SEEN_FILE, "w", encoding="utf-8") as f:
+        json.dump(seen_ids[-SEEN_KEEP:], f, ensure_ascii=False)
+        f.write("\n")
+
+
+def main():
+    # 시크릿이 아직 등록되지 않았으면 조용히 건너뛴다
+    missing = [k for k in ("BOORINY_ID", "BOORINY_PW", "BOORINY_BOT_TOKEN", "TELEGRAM_CHAT_ID")
+               if not os.environ.get(k)]
+    if missing:
+        logger.info("booriny 시크릿 미설정으로 건너뜀: %s", ", ".join(missing))
+        return
+
+    token = os.environ["BOORINY_BOT_TOKEN"]
+    chat_id = os.environ["TELEGRAM_CHAT_ID"]
+
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": USER_AGENT, "Content-Type": "application/json",
+        "Origin": BASE, "Referer": BASE + "/",
+    })
+    login(session)
+    listings = fetch_listings(session)
+    logger.info("받은 매물 %d건", len(listings))
+
+    matched = [x for x in listings if matches(x)]
+    logger.info("필터 통과(14구·다세대·5억이하) %d건", len(matched))
+
+    seen = load_seen()
+    seen_set = set(seen)
+    first_run = not seen
+
+    new_items = [x for x in matched if str(x.get("id")) not in seen_set]
+
+    if first_run:
+        # 첫 실행: 기존 매물은 알림 없이 기준선으로 저장
+        for x in matched:
+            seen.append(str(x.get("id")))
+        save_seen(seen)
+        send_message(
+            token, chat_id,
+            f"🏠 부리니 매물 감시를 시작했습니다. "
+            f"(현재 조건 매물 {len(matched)}건을 기준선으로 저장) 새 매물이 올라오면 알려드릴게요.",
+        )
+        logger.info("첫 실행: 기준선 %d건 저장", len(matched))
+        return
+
+    try:
+        # 오래된 것부터 발송(리스트는 최신순이므로 뒤집는다)
+        for x in reversed(new_items):
+            send_message(token, chat_id, format_message(x))
+            seen.append(str(x.get("id")))
+            logger.info("알림: %s %s %s", x.get("division"), x.get("sector"), x.get("prc"))
+    finally:
+        save_seen(seen)
+
+
+if __name__ == "__main__":
+    main()
