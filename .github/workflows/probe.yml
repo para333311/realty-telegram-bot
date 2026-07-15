@@ -1,4 +1,4 @@
-name: (임시) commission 조사
+name: (임시) commission 검증
 
 on:
   push:
