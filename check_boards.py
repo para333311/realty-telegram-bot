@@ -169,15 +169,28 @@ def scrape_urban(url, keywords, row_keywords=(), name=""):
         if len(title) < 3:
             continue
 
+        # 구 이름 추출: subject "노원구 | 2026-55" 또는 site "노원구청 도시관리과"
+        gu = ""
+        subj = values.get("subject", "")
+        if "|" in subj:
+            gu = subj.split("|", 1)[0].strip()
+        if not gu:
+            gu = values.get("site", "")
+
         if keywords and not any(k in title for k in keywords):
             continue
+        # row_keywords: 구 이름 목록이면 구(gu)로, 그 외(부서명 등)는 메타 필드로 매칭
         if row_keywords:
-            row_text = " ".join(
-                v for k, v in values.items()
-                if not any(x in k.upper() for x in ("CONTENT", "CONTTXT"))
-            )
-            if not any(k in row_text for k in row_keywords):
-                continue
+            if all(k.endswith("구") for k in row_keywords):
+                if not any(k in gu for k in row_keywords):
+                    continue
+            else:
+                row_text = " ".join(
+                    v for k, v in values.items()
+                    if not any(x in k.upper() for x in ("CONTENT", "CONTTXT"))
+                )
+                if not any(k in row_text for k in row_keywords):
+                    continue
 
         if values.get("announceCode"):  # 열람공고 상세
             link = ("https://urban.seoul.go.kr/view/html/PMNU4010200001"
@@ -192,7 +205,9 @@ def scrape_urban(url, keywords, row_keywords=(), name=""):
                 date_val = m.group()
                 break
 
-        posts.append({"title": title, "link": link, "date": date_val})
+        # 같은 제목이 여러 구에 있을 수 있어 구 이름을 앞에 붙여 구분/중복방지
+        display = f"[{gu}] {title}" if gu and gu not in title else title
+        posts.append({"title": display, "link": link, "date": date_val})
 
     logger.info("%s: urban 행 %d개, 필터 통과 %d건", name or url, len(rows), len(posts))
     return posts
