@@ -59,14 +59,26 @@ def clean(text):
 
 
 def search(keyword, client_id, client_secret):
+    """키워드로 카페 글을 최신순으로 검색한다.
+
+    네이버 검색 API는 카페를 지정할 수 없어 전체 카페에서 검색되므로,
+    부동산스터디 글이 최신 100건 밖으로 밀리지 않도록 start를 늘려가며
+    최대 1000건까지(display 100 × 10페이지) 받아온다.
+    """
     headers = {
         "X-Naver-Client-Id": client_id,
         "X-Naver-Client-Secret": client_secret,
     }
-    params = {"query": keyword, "display": 100, "sort": "date"}
-    r = requests.get(SEARCH_URL, headers=headers, params=params, timeout=(15, 30))
-    r.raise_for_status()
-    return r.json().get("items", [])
+    items = []
+    for start in range(1, 1001, 100):   # start=1,101,...,901 (API 최대 start=1000)
+        params = {"query": keyword, "display": 100, "start": start, "sort": "date"}
+        r = requests.get(SEARCH_URL, headers=headers, params=params, timeout=(15, 30))
+        r.raise_for_status()
+        page = r.json().get("items", [])
+        items.extend(page)
+        if len(page) < 100:   # 마지막 페이지
+            break
+    return items
 
 
 def in_target_cafe(item):
