@@ -55,3 +55,8 @@
 송파구 | https://www.songpa.go.kr/www/sub.do?key=2776 | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
 # 양천구는 해외 서버 차단 + 열린데이터광장 API 부재로 감시 불가하여 비활성화
 # 양천구 | https://www.yangcheon.go.kr/site/yangcheon/ex/seol/seolCollectList.do | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
+
+# ── 정보공개포털(open.go.kr) ──
+# 메인페이지+SPA 라우팅(#1)이라 자바스크립트로 목록을 불러올 가능성이 높음.
+# 파싱 안 되면(행 0개) 로그로 확인 후 비활성화 검토.
+정보공개포털 | https://www.open.go.kr/mobile/com/main/mainView.do | 재개발,신속통합,모아타운,도심복합
