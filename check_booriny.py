@@ -117,7 +117,7 @@ def format_message(item):
     is_sinsok = "신속통합" in rtype or "신통기획" in rtype or "신속통합" in stage
 
     if is_sinsok:
-        rtype_txt = f"🔥{rtype}🔥" if rtype else ""
+        rtype_txt = f"🔥{rtype}" if rtype else ""
     elif "모아타운" in rtype:
         rtype_txt = f"🟢{rtype}"
     else:
