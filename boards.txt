@@ -43,6 +43,15 @@
 동대문구 | https://www.ddm.go.kr/www/selectBbsNttList.do?key=904&bbsNo=38&integrDeptCode=&searchCnd=all&searchKrwd=&searchCtgry=%EB%8F%84%EC%8B%9C%EC%A0%95%EB%B9%84
 강동구 | https://www.gangdong.go.kr/web/newportal/bbs/b_111
 
+# ── 구청별 결재문서 공개 게시판 (검색으로 확인, 파싱 여부는 로그로 검증 필요) ──
+서대문구 결재문서 | https://www.sdm.go.kr/admininfo/public/publicDocList.do | 재개발,신속통합,모아타운,도심복합
+용산구 결재문서 | https://www.yongsan.go.kr/site/ysOpen/publicdata/openList.do?sitecdv=S0000800&menucdv=07000000 | 재개발,신속통합,모아타운,도심복합
+강동구 결재문서 | https://www.gangdong.go.kr/web/newportal/contents/gdp_003_002_003_004 | 재개발,신속통합,모아타운,도심복합
+서초구 결재문서 | https://www.seocho.go.kr/site/seocho/03/10302050000002015071605.jsp | 재개발,신속통합,모아타운,도심복합
+# 영등포·강남·마포·종로·중구·동대문·송파는 자체 결재문서 게시판이 없고
+# 행안부 정보공개포털(open.go.kr) 또는 서울정보소통광장(opengov, 해외차단)으로만
+# 공개함 — 정보공개포털 항목이 이들을 간접 커버(접속 성공 시)
+
 # ── 고시공고/공지 게시판 + 키워드 필터 ──
 마포구 | https://www.mapo.go.kr/site/main/board/notice/list?baCommSelec=false&sc=&sv=&pageSize=10 | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지,모아타운,도심복합
 성동구 | https://www.sd.go.kr/main/selectBbsNttList.do?key=1307&bbsNo=166&integrDeptCode=&searchCtgry=&searchCnd=SJ&searchKrwd= | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지,모아타운,도심복합
