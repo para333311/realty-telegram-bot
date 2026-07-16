@@ -370,7 +370,6 @@
   },
   "https://www.open.go.kr/othicInfo/infoList/mnstrSanDocList.do": {
     "name": "정보공개포털 서울 결재문서",
-    "keys": [],
-    "error": true
+    "keys": []
   }
 }
