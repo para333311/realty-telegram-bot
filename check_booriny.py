@@ -123,7 +123,8 @@ def format_message(item):
     else:
         rtype_txt = rtype
 
-    badge = " ".join(x for x in (zone, rtype_txt, stage) if x)
+    zone_rtype = " ".join(x for x in (zone, rtype_txt) if x)
+    badge = " · ".join(x for x in (zone_rtype, stage) if x)
     spc = item.get("spc1")
     spc_txt = f" ({spc}㎡)" if spc and str(spc) not in ("0", "0.00") else ""
     atcl_no = item.get("atcl_no")
