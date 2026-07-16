@@ -58,6 +58,18 @@ GU_ALLOW = {
 MAX_PRICE = 500_000_000            # 5억 이하
 DASEDAE_TYPE_CODES = {"C02"}       # 다세대(빌라/연립) — booriny rlet_tp_cd
 
+# 제외할 재개발구역(사용자 요청) — redevelopment_area 값 기준
+ZONE_EXCLUDE = {
+    "(가)남가좌동 3-62",
+    "북가좌동 3-191",
+    "홍제동 311-1",
+    "고은산 서측",
+    "홍제동 9-81",
+    "가좌중동성산역세권",
+    "성산동 160-4",
+    "(가)대림동 1012-22",
+}
+
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
 
@@ -91,6 +103,8 @@ def matches(item):
     if not item.get("is_redevelopment"):
         return False
     if item.get("division") not in GU_ALLOW:
+        return False
+    if item.get("redevelopment_area") in ZONE_EXCLUDE:
         return False
     # 다세대(C02)만
     if item.get("rlet_tp_cd") not in DASEDAE_TYPE_CODES:
