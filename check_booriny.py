@@ -106,11 +106,6 @@ def matches(item):
     return True
 
 
-def _emphasize(text):
-    # 신속통합(기획)인 경우 눈에 띄게 강조
-    return f"⚡{text}⚡" if "신속통합" in text else text
-
-
 def format_message(item):
     prc = int(item.get("prc") or 0)
     eok = prc / 100_000_000
@@ -119,19 +114,23 @@ def format_message(item):
     zone = item.get("redevelopment_area") or item.get("atcl_nm") or "매물"
     rtype = item.get("redevelopment_type") or ""
     stage = item.get("redevelopment_stage") or ""
-    badge = " · ".join(_emphasize(x) for x in (rtype, stage) if x)
+    is_sinsok = "신속통합" in rtype or "신속통합" in stage
+
+    badge = " · ".join(x for x in (zone, rtype, stage) if x)
     spc = item.get("spc1")
-    spc_txt = f" · {spc}㎡" if spc and str(spc) not in ("0", "0.00") else ""
+    spc_txt = f" ({spc}㎡)" if spc and str(spc) not in ("0", "0.00") else ""
     atcl_no = item.get("atcl_no")
     # booriny는 네이버 매물을 취합 — 네이버부동산 상세로 연결
     link = f"https://m.land.naver.com/article/info/{atcl_no}" if atcl_no else BASE
-    head = f"🏠 {gu} {dong}"
-    zone_line = f"{zone}" + (f" [{badge}]" if badge else "")
+
+    # 신속통합(기획)인 경우 눈에 띄게 강조
+    head = f"🔥 [{badge}] 🔥" if is_sinsok else f"🏠 [{badge}]"
+
     return (
         f"{head}\n"
-        f"{zone_line}\n"
-        f"매매 {eok:.2f}억{spc_txt}\n"
-        f"{link}"
+        f"💰 {eok:.2f}억{spc_txt}\n"
+        f"📍 {gu} {dong}\n"
+        f"🔗 {link}"
     )
 
 
