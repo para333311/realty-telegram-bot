@@ -106,6 +106,11 @@ def matches(item):
     return True
 
 
+def _emphasize(text):
+    # 신속통합(기획)인 경우 눈에 띄게 강조
+    return f"⚡{text}⚡" if "신속통합" in text else text
+
+
 def format_message(item):
     prc = int(item.get("prc") or 0)
     eok = prc / 100_000_000
@@ -114,18 +119,18 @@ def format_message(item):
     zone = item.get("redevelopment_area") or item.get("atcl_nm") or "매물"
     rtype = item.get("redevelopment_type") or ""
     stage = item.get("redevelopment_stage") or ""
-    badge = " · ".join(x for x in (rtype, stage) if x)
+    badge = " · ".join(_emphasize(x) for x in (rtype, stage) if x)
     spc = item.get("spc1")
     spc_txt = f" · {spc}㎡" if spc and str(spc) not in ("0", "0.00") else ""
     atcl_no = item.get("atcl_no")
     # booriny는 네이버 매물을 취합 — 네이버부동산 상세로 연결
     link = f"https://m.land.naver.com/article/info/{atcl_no}" if atcl_no else BASE
-    head = f"🏠 [부리니 재개발매물] {gu} {dong}"
-    zone_line = f"{zone}" + (f" ({badge})" if badge else "")
+    head = f"🏠 {gu} {dong}"
+    zone_line = f"{zone}" + (f" [{badge}]" if badge else "")
     return (
         f"{head}\n"
         f"{zone_line}\n"
-        f"다세대 · 매매 {eok:.2f}억{spc_txt}\n"
+        f"매매 {eok:.2f}억{spc_txt}\n"
         f"{link}"
     )
 
@@ -242,7 +247,7 @@ def main():
     try:
         # 오래된 것부터 발송(리스트는 최신순이므로 뒤집는다)
         for x in reversed(to_alert):
-            send_message(token, chat_id, format_message(x))
+            send_message(token, chat_id, format_message(x), disable_preview=True)
             seen.append(get_listing_key(x))
             logger.info("알림: %s %s %s", x.get("division"), x.get("sector"), x.get("prc"))
     finally:
