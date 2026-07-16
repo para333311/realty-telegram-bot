@@ -45,6 +45,7 @@
 # ── 고시공고/공지 게시판 + 키워드 필터 ──
 마포구 | https://www.mapo.go.kr/site/main/board/notice/list?baCommSelec=false&sc=&sv=&pageSize=10 | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
 성동구 | https://www.sd.go.kr/main/selectBbsNttList.do?key=1307&bbsNo=166&integrDeptCode=&searchCtgry=&searchCnd=SJ&searchKrwd= | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
+성동구 정보공개 | https://www.sd.go.kr/main/selectOpenOrginlList.do?key=1270 | 재개발,도심복합,신속통합,모아타운
 영등포구 | http://openapi.seoul.go.kr:8088/{KEY}/json/YdpNewsNoticeList/1/30/ | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
 광진구 | https://www.gwangjin.go.kr/portal/bbs/B0000001/list.do?pageIndex=1&menuNo=200190&deptId=&searchCnd=1&searchWrd=&sdate=&edate= | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
 광진구 정보공개 | https://www.gwangjin.go.kr/portal/singl/openApi/openDocList.do?menuNo=200110 | 신속통합,모아타운,재개발
