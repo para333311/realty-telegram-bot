@@ -25,7 +25,7 @@ jobs:
           python-version: "3.12"
 
       - name: 의존성 설치
-        run: pip install requests beautifulsoup4
+        run: pip install requests beautifulsoup4 pypdf
 
       - name: 블로그 새 글 확인 및 알림 전송
         env:
@@ -56,12 +56,18 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python check_cafe.py
 
+      - name: 서울시보 재개발 관련 목차 확인 및 알림 전송
+        env:
+          BOARD_BOT_TOKEN: ${{ secrets.BOARD_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python check_sibo.py
+
       - name: 확인한 글 기록 저장
         run: |
-          if [ -n "$(git status --porcelain seen.json seen_boards.json seen_booriny.json seen_cafe.json)" ]; then
+          if [ -n "$(git status --porcelain seen.json seen_boards.json seen_booriny.json seen_cafe.json seen_sibo.json)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add seen.json seen_boards.json seen_booriny.json seen_cafe.json
+            git add seen.json seen_boards.json seen_booriny.json seen_cafe.json seen_sibo.json
             git commit -m "chore: 확인한 글 기록 업데이트"
             git pull --rebase origin "$GITHUB_REF_NAME"
             git push

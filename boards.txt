@@ -11,7 +11,8 @@
 
 # ── 서울시 ──
 서울시보도자료 | http://openapi.seoul.go.kr:8088/{KEY}/json/SeoulNewsList/1/50/ | | 공동주택과,신속통합기획과,도시계획과,주거정비과,전략주택공급과
-서울시보 | https://www.seoul.go.kr/func/seoulsibo/list.do
+# 서울시보: 매 호수를 그대로 알리는 대신, check_sibo.py가 PDF 목차에서
+# 재개발 관련 항목만 뽑아 알림(중복 방지를 위해 여기 등록하지 않음)
 # 열람공고(주민의견제출): 14개 구 전체 모니터링 (제목 키워드 없이 구로만 필터)
 도시계획 열람공고 | https://urban.seoul.go.kr/wrtanc/getWrtancList.json?searchGubun=ing&pageSize=100 | | 강남구,강동구,광진구,동대문구,동작구,마포구,서대문구,서초구,성동구,송파구,영등포구,용산구,종로구,중구
 # 결정고시: 4개 유형(결정고시·지구단위계획·정비사업구역계·도시개발사업 관련) 제목 키워드 + 14개 구(구 이름) 필터
