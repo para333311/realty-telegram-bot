@@ -76,7 +76,11 @@ def fetch_listings(session, limit=2000):
     # 서버측 필터 파라미터가 먹지 않으므로, 넉넉히 받아 클라이언트에서 거른다.
     r = session.get(BASE + "/api/listings", params={"limit": limit}, timeout=(15, 60), verify=False)
     r.raise_for_status()
-    return r.json().get("data", {}).get("listings", [])
+    listings = r.json().get("data", {}).get("listings", [])
+    # 첫 매물의 필드 로깅 (날짜 필드 확인용)
+    if listings:
+        logger.info("첫 매물 필드: %s", list(listings[0].keys()))
+    return listings
 
 
 def matches(item):
@@ -124,16 +128,34 @@ def format_message(item):
     )
 
 
+def get_listing_key(item):
+    """매물의 고유 키를 생성 (ID + 날짜 조합으로 같은 매물이라도 새로 올라오면 다시 알림)"""
+    item_id = str(item.get("id") or "")
+    # 가능한 날짜 필드명들 (첫 번째 존재하는 것 사용)
+    for date_field in ["reg_dt", "reg_date", "regDate", "rlet_reg_dt", "created_at", "updated_at"]:
+        if date_field in item and item[date_field]:
+            return f"{item_id}:{item[date_field]}"
+    # 날짜가 없으면 ID만 사용 (하위호환성)
+    return item_id
+
+
 def load_seen():
     if not os.path.exists(SEEN_FILE):
         return []
-    with open(SEEN_FILE, encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(SEEN_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+            # 구 형식 (문자열 리스트)과 신 형식 (혼합) 모두 지원
+            if isinstance(data, list):
+                return data
+            return data.get("items", [])
+    except (json.JSONDecodeError, ValueError):
+        return []
 
 
-def save_seen(seen_ids):
+def save_seen(seen_keys):
     with open(SEEN_FILE, "w", encoding="utf-8") as f:
-        json.dump(seen_ids[-SEEN_KEEP:], f, ensure_ascii=False)
+        json.dump(seen_keys[-SEEN_KEEP:], f, ensure_ascii=False)
         f.write("\n")
 
 
@@ -164,12 +186,13 @@ def main():
     seen_set = set(seen)
     first_run = not seen
 
-    new_items = [x for x in matched if str(x.get("id")) not in seen_set]
+    # ID + 날짜 조합으로 새 매물 판정 (같은 ID라도 새로운 리스팅 날짜면 다시 알림)
+    new_items = [x for x in matched if get_listing_key(x) not in seen_set]
 
     if first_run:
         # 첫 실행: 기존 매물은 알림 없이 기준선으로 저장
         for x in matched:
-            seen.append(str(x.get("id")))
+            seen.append(get_listing_key(x))
         save_seen(seen)
         send_message(
             token, chat_id,
@@ -183,7 +206,7 @@ def main():
         # 오래된 것부터 발송(리스트는 최신순이므로 뒤집는다)
         for x in reversed(new_items):
             send_message(token, chat_id, format_message(x))
-            seen.append(str(x.get("id")))
+            seen.append(get_listing_key(x))
             logger.info("알림: %s %s %s", x.get("division"), x.get("sector"), x.get("prc"))
     finally:
         save_seen(seen)
