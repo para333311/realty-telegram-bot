@@ -124,7 +124,8 @@ def load_seen():
 
 
 def save_seen(seen):
-    seen["done"] = seen["done"][-500:]
+    # 완료 순서를 유지해야 실제로 오래된 호수부터 안전하게 정리할 수 있다.
+    seen["done"] = list(dict.fromkeys(seen["done"]))[-500:]
     with open(SEEN_FILE, "w", encoding="utf-8") as f:
         json.dump(seen, f, ensure_ascii=False)
         f.write("\n")
@@ -144,7 +145,8 @@ def main():
     logger.info("목록에서 호수 %d건 확인", len(issues))
 
     seen = load_seen()
-    done_set = set(seen["done"])
+    done = list(dict.fromkeys(seen["done"]))
+    done_set = set(done)
     pending = seen["pending"]
 
     first_run = not done_set and not pending
@@ -155,9 +157,12 @@ def main():
 
     if first_run:
         # 첫 실행: 기존 호수는 다운로드 시도 없이 기준선으로 저장
-        done_set.update(pending.keys())
+        for no in pending:
+            if no not in done_set:
+                done.append(no)
+                done_set.add(no)
         pending.clear()
-        save_seen({"done": list(done_set), "pending": pending})
+        save_seen({"done": done, "pending": pending})
         send_message(
             token, chat_id,
             "📰 서울시보 재개발 관련 목차 감시를 시작했습니다. "
@@ -179,6 +184,7 @@ def main():
             logger.info("제%s호: PDF 다운로드 실패(시도 %d/%d)", no, info["attempts"], MAX_ATTEMPTS)
             if info["attempts"] >= MAX_ATTEMPTS:
                 logger.warning("제%s호: %d회 실패로 포기", no, MAX_ATTEMPTS)
+                done.append(no)
                 done_set.add(no)
                 del pending[no]
             continue
@@ -193,10 +199,11 @@ def main():
         else:
             logger.info("제%s호: 재개발 관련 항목 없음", no)
 
+        done.append(no)
         done_set.add(no)
         del pending[no]
 
-    save_seen({"done": list(done_set), "pending": pending})
+    save_seen({"done": done, "pending": pending})
 
 
 if __name__ == "__main__":

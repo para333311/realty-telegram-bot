@@ -33,6 +33,7 @@ SEEN_FILE = "seen.json"
 SEEN_LINKS_KEEP = 200  # 블로그별로 보관할 확인한 글 링크 수
 FETCH_WORKERS = 10  # 동시에 확인할 블로그 수
 SEND_INTERVAL = 1.0  # 텔레그램 메시지 발송 간 최소 간격(초)
+TELEGRAM_SEND_ATTEMPTS = 3
 
 _last_send_at = 0.0
 
@@ -76,13 +77,15 @@ def send_message(token, chat_id, text, disable_preview=False, parse_mode=None):
         payload["disable_web_page_preview"] = True
     if parse_mode:
         payload["parse_mode"] = parse_mode
-    for attempt in range(3):
+    for attempt in range(TELEGRAM_SEND_ATTEMPTS):
         response = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
             json=payload,
             timeout=30,
         )
         if response.status_code == 429:
+            if attempt == TELEGRAM_SEND_ATTEMPTS - 1:
+                response.raise_for_status()
             retry_after = 5
             try:
                 retry_after = response.json()["parameters"]["retry_after"]
