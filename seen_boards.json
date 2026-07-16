@@ -71,22 +71,6 @@
       "-창신동 143-37번지 일대- 주택재개발사업 추진을 위한 동의서 번호부여 사실 공개#"
     ]
   },
-  "https://www.ddm.go.kr/www/selectBbsNttList.do?bbsNo=38&key=904&searchCtgry=%EB%8F%84%EC%8B%9C%EC%A0%95%EB%B9%84": {
-    "name": "동대문구",
-    "keys": [
-      "청량리재정비촉진지구 용두1구역6지구  공공재개발사업 감정평가법인 선정 결과 공개#2026-07-15",
-      "청량리재정비촉진지구 용두1구역2지구 도시정비형 재개발사업 감정평가업자 선정 결과 공개#2026-03-13",
-      "도시관리계획(동부화물터미널 지구단위계획 및 특별계획구역 세부개발계획) 결정(변경)(안) 재열람공고 알림#2026-02-19",
-      "배봉산 숲속 폭포 미디어파사드 상영 안내#2026-02-13",
-      "동의서 번호부여 및 구역공개(전농동 134-1번지 일대 신속통합기획 주택정비형재개발사업)#2026-02-06",
-      "신속통합기획 주택정비형 재개발사업 후보지 신청 접수 알림(용두동 39번지 일대)#2025-12-09",
-      "도시관리계획(동부화물터미널 지구단위계획 및 특별계획구역 세부개발계획) 결정(변경)(안) 열람공고 알림#2025-11-20",
-      "고려대 역세권 장기전세주택 동의서 번호부여 및 구역 공개(제기동 1145-8번지 일대)#2025-10-27",
-      "전농동 152-65번지 일대 신속통합기획 주택재개발사업 후보지 자문 결과 안내#2025-09-16",
-      "동의서 번호부여 및 구역공개(전농동 206-21번지 일대 신속통합기획 주택재개발사업)#2025-09-09",
-      "제2종 및 제3종 일반주거지역 한시적 용적률 상향에 따른 위반건축물 해소 건축사 무료상담#2025-08-22"
-    ]
-  },
   "https://www.gangdong.go.kr/web/newportal/bbs/b_111": {
     "name": "강동구",
     "keys": [
@@ -335,5 +319,37 @@
   "https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM12": {
     "name": "공공주택통합심의위원회 일정·결과",
     "keys": []
+  },
+  "https://www.dongjak.go.kr/portal/singl/openApi/openDocList.do?menuNo=200144": {
+    "name": "동작구 결재문서",
+    "keys": []
+  },
+  "https://www.yongsan.go.kr/portal/bbs/B0000029/list.do?menuNo=200139": {
+    "name": "용산구 고시공고",
+    "keys": []
+  },
+  "https://www.ddm.go.kr/www/selectBbsNttList.do?key=904&bbsNo=38&integrDeptCode=&searchCnd=all&searchKrwd=&searchCtgry=%EB%8F%84%EC%8B%9C%EC%A0%95%EB%B9%84": {
+    "name": "동대문구",
+    "keys": [],
+    "error": true
+  },
+  "https://www.sd.go.kr/main/selectOpenOrginlList.do?key=1270": {
+    "name": "성동구 정보공개",
+    "keys": []
+  },
+  "https://www.gwangjin.go.kr/portal/singl/openApi/openDocList.do?menuNo=200110": {
+    "name": "광진구 정보공개",
+    "keys": [],
+    "error": true
+  },
+  "https://www.gwangjin.go.kr/portal/bbs/B0000378/list.do?menuNo=200192": {
+    "name": "광진구 고시공고 입법예고",
+    "keys": [],
+    "error": true
+  },
+  "https://www.open.go.kr/mobile/com/main/mainView.do": {
+    "name": "정보공개포털",
+    "keys": [],
+    "error": true
   }
 }
