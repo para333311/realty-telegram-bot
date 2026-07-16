@@ -106,30 +106,6 @@ def matches(item):
     return True
 
 
-# booriny 사이트의 유형별 배지 색상을 참고한 이모지 매핑(구체적인 것부터 순서대로 검사)
-TYPE_COLOR_RULES = [
-    ("신통기획", "🩷"), ("신속통합", "🩷"),          # 민간주도 · 핑크
-    ("민도복", "🩵"), ("민간도심복합", "🩵"),          # 민간주도 · 하늘색
-    ("도심공공복합", "🟢"),                          # 공공주도 · 초록
-    ("공공재개발", "🔵"),                            # 공공주도 · 파랑
-    ("재건축(아파트)", "🟣"),                        # 민간주도 · 보라
-    ("재건축", "🔵"),                                # 민간주도 · 파랑
-    ("지역주택조합", "🟠"),                          # 민간주도 · 주황
-    ("역세권활성화", "🟠"), ("역세권", "🟠"),          # 공공주도 · 주황
-    ("장기전세", "🩷"),                              # 공공주도 · 핑크
-    ("가로주택", "🟢"), ("모아타운", "🟢"),           # 소규모 · 초록
-    ("소규모", "🔵"),                                # 소규모 · 파랑
-    ("재개발", "🔵"),                                # 민간주도 · 파랑
-]
-
-
-def _type_color(rtype):
-    for key, dot in TYPE_COLOR_RULES:
-        if key in rtype:
-            return dot
-    return "⚪"
-
-
 def format_message(item):
     prc = int(item.get("prc") or 0)
     eok = prc / 100_000_000
@@ -140,22 +116,29 @@ def format_message(item):
     stage = item.get("redevelopment_stage") or ""
     is_sinsok = "신속통합" in rtype or "신통기획" in rtype or "신속통합" in stage
 
-    rtype_txt = f"{_type_color(rtype)}{rtype}" if rtype else ""
-    badge = " · ".join(x for x in (zone, rtype_txt, stage) if x)
+    if is_sinsok:
+        rtype_txt = f"🔥{rtype}" if rtype else ""
+    elif "모아타운" in rtype:
+        rtype_txt = f"🟢{rtype}"
+    else:
+        rtype_txt = rtype
+
+    zone_rtype = " ".join(x for x in (zone, rtype_txt) if x)
+    badge = " · ".join(x for x in (zone_rtype, stage) if x)
     spc = item.get("spc1")
     spc_txt = f" ({spc}㎡)" if spc and str(spc) not in ("0", "0.00") else ""
     atcl_no = item.get("atcl_no")
     # booriny는 네이버 매물을 취합 — 네이버부동산 상세로 연결
     link = f"https://m.land.naver.com/article/info/{atcl_no}" if atcl_no else BASE
 
-    # 신속통합(기획)인 경우 눈에 띄게 추가 강조
-    head = f"🔥 [{badge}] 🔥" if is_sinsok else f"🏠 [{badge}]"
+    bild_nm = item.get("bild_nm") or ""
+    address = " ".join(x for x in (gu, dong, bild_nm) if x)
 
     return (
-        f"{head}\n"
-        f"💰 {eok:.2f}억{spc_txt}\n"
-        f"📍 {gu} {dong}\n"
-        f"🔗 {link}"
+        f"[{badge}]\n"
+        f"{eok:.2f}억{spc_txt}\n"
+        f"{address}\n"
+        f"{link}"
     )
 
 
