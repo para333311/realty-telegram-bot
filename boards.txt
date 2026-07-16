@@ -37,7 +37,7 @@
 동작구 | https://www.dongjak.go.kr/portal/bbs/B0001387/list.do?menuNo=201575
 용산구 | https://www.yongsan.go.kr/portal/bbs/B0000170/list.do?menuNo=200848&deptId=3020154&sdate=&edate=&searchCnd=1&searchWrd=
 종로구 | https://www.jongno.go.kr/portal/bbs/selectBoardList.do?bbsId=BBSMSTR_000000000175&menuId=400675&menuNo=400675
-동대문구 | https://www.ddm.go.kr/www/selectBbsNttList.do?bbsNo=38&key=904&searchCtgry=%EB%8F%84%EC%8B%9C%EC%A0%95%EB%B9%84
+동대문구 | https://www.ddm.go.kr/www/selectBbsNttList.do?key=904&bbsNo=38&integrDeptCode=&searchCnd=all&searchKrwd=&searchCtgry=%EB%8F%84%EC%8B%9C%EC%A0%95%EB%B9%84
 강동구 | https://www.gangdong.go.kr/web/newportal/bbs/b_111
 
 # ── 고시공고/공지 게시판 + 키워드 필터 ──
