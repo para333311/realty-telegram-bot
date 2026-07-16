@@ -39,9 +39,13 @@
 
 확인한 공고는 `seen_boards.json`에 자동 커밋됩니다.
 
-서울 열린데이터광장 OpenAPI(`openapi.seoul.go.kr`), 서울도시공간포털 JSON(`urban.seoul.go.kr`), 서울시 도시·건축위원회(`commission.eseoul.go.kr`) 등은 사이트별 전용 파서로 자동 처리됩니다.
+서울 열린데이터광장 OpenAPI(`openapi.seoul.go.kr`), 서울도시공간포털 JSON(`urban.seoul.go.kr`), 서울시 도시·건축위원회(`commission.eseoul.go.kr`), 정보공개포털 기관장 결재문서 검색(`open.go.kr`)은 사이트별 전용 파서로 자동 처리됩니다.
 
-일부 관공서 사이트는 해외 서버(GitHub) 접속을 차단하므로, 그런 곳은 [서울 열린데이터광장](https://data.seoul.go.kr) OpenAPI 주소를 대신 사용합니다. API 주소의 `{KEY}` 자리에는 `SEOUL_API_KEY` 시크릿 값이 들어갑니다 — 열린데이터광장에서 무료 회원가입 후 인증키를 발급받아 등록하세요. (미등록 시 테스트용 sample 키로 동작하며 조회 건수가 제한됩니다.)
+서울정보소통광장에는 `/openapi` JSONP가 실제로 있지만 해외 GitHub Actions IP에서는 TCP 연결 단계부터 차단됩니다. 그래서 정적 파싱을 포기하는 대신, 동일한 공개 결재문서를 검색할 수 있고 Actions에서 접속 가능한 **행정안전부 정보공개포털의 공식 AJAX 검색 API**를 1차 대체 경로로 사용합니다. 검색 API가 첨부파일 본문까지 찾는 특성 때문에 코드에서 제목을 다시 검사하고 서울시 본청과 감시 대상 14개 자치구만 허용해 오탐을 차단합니다. 최근 180일을 매 실행 검색하며 `seen_boards.json`으로 중복 알림을 방지합니다.
+
+`check_opengov.py`는 기존 `NAVER_CLIENT_ID`·`NAVER_CLIENT_SECRET`을 재사용하는 2차 보완 경로입니다. 네이버 공식 웹문서 검색에서 `opengov.seoul.go.kr/sanction/숫자` 문서만 받고, 제목에 키워드가 있으며 검색 설명에서 최근 45일 이내 실제 작성일을 확인할 수 있는 결과만 알립니다. 따라서 검색 색인 시점 때문에 오래된 문서가 새 문서처럼 재등장하던 과거 구현의 문제를 피합니다. 확인한 링크는 기존 `seen_cafe.json`에 `opengov:` 접두어로 함께 저장하므로 Actions 설정 변경 없이 자동 보존됩니다.
+
+일부 구청은 [서울 열린데이터광장](https://data.seoul.go.kr) OpenAPI 주소를 대신 사용합니다. API 주소의 `{KEY}` 자리에는 `SEOUL_API_KEY` 시크릿 값이 들어갑니다 — 열린데이터광장에서 무료 회원가입 후 인증키를 발급받아 등록하세요. (미등록 시 테스트용 sample 키로 동작하며 조회 건수가 제한됩니다.) 양천구처럼 과거 해외 차단으로 분류됐지만 현재 서버 렌더링 목록이 정상 제공되는 대상은 직접 감시로 복구했습니다.
 
 ### 부리니(booriny.com) 재개발 매물 알림
 

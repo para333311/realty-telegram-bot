@@ -17,10 +17,10 @@ import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import urljoin
+from datetime import date, timedelta
+from urllib.parse import urlencode, urljoin
 
 import requests
-import urllib3
 from bs4 import BeautifulSoup
 
 from check_once import send_message
@@ -31,8 +31,6 @@ try:
     load_dotenv()
 except ImportError:
     pass
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -101,7 +99,7 @@ def scrape_seoul_api(url, keywords, row_keywords=(), name=""):
     if not key:
         key = "sample"  # 발급 전 테스트용 (5건 제한)
         logger.warning("SEOUL_API_KEY 미설정: sample 키로 호출합니다 (%s)", name or url)
-    response = requests.get(url.replace("{KEY}", key), timeout=(15, 40), verify=False)
+    response = requests.get(url.replace("{KEY}", key), timeout=(15, 40))
     response.raise_for_status()
     data = json.loads(response.text)
 
@@ -151,6 +149,122 @@ def scrape_seoul_api(url, keywords, row_keywords=(), name=""):
     return posts
 
 
+def scrape_open_portal(url, keywords, row_keywords=(), name=""):
+    """정보공개포털의 공개 기관장 결재문서 AJAX 검색 결과를 읽는다.
+
+    정적 목록에는 검색 행이 없지만, 공식 화면이 사용하는 JSON endpoint는
+    GitHub Actions에서도 접근할 수 있다. 본문 검색으로 섞인 결과를 막기 위해
+    제목과 서울시/감시 대상 자치구를 다시 엄격히 검사한다.
+    """
+    endpoint = "https://www.open.go.kr/othicInfo/infoList/mnstrSanDocList.ajax"
+    today = date.today()
+    start = today - timedelta(days=180)
+    target_gu = tuple(k for k in row_keywords if k.endswith("구")) or tuple(
+        gu for gu in SEOUL_GU_CODE.values()
+        if gu in {
+            "강남구", "강동구", "광진구", "동대문구", "동작구", "마포구",
+            "서대문구", "서초구", "성동구", "송파구", "영등포구", "용산구",
+            "종로구", "중구",
+        }
+    )
+    search_terms = tuple(dict.fromkeys(keywords))
+    if not search_terms:
+        raise ValueError("정보공개포털 검색에는 제목 키워드가 필요합니다")
+
+    session = requests.Session()
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Referer": url,
+        "X-Requested-With": "XMLHttpRequest",
+    }
+    # 검색 화면을 먼저 열어 세션 쿠키를 받는다.
+    page = session.get(url, headers={"User-Agent": USER_AGENT}, timeout=(15, 40))
+    page.raise_for_status()
+
+    posts_by_id = {}
+    searched_rows = 0
+    for keyword in search_terms:
+        payload = {
+            "kwd": keyword,
+            "preKwds": keyword,
+            "reSrchFlag": "off",
+            "othbcSeCd": "",
+            "insttSeCd": "",
+            "eduYn": "N",
+            "startDate": start.strftime("%Y%m%d"),
+            "endDate": today.strftime("%Y%m%d"),
+            "insttCdNm": "",
+            "insttCd": "",
+            "searchInsttCdNmPop": "",
+            "searchMainYn": "",
+            "viewPage": "1",
+            "rowPage": "100",
+            "sort": "s",
+        }
+        response = session.post(
+            endpoint, data=payload, headers=headers, timeout=(15, 50)
+        )
+        response.raise_for_status()
+        data = response.json()
+        result = data.get("result") or data
+        if str(result.get("code")) != "200":
+            raise RuntimeError(
+                f"정보공개포털 API 오류({keyword}): {result.get('code')} "
+                f"{result.get('message') or result.get('rtnMsg') or ''}"
+            )
+        rows = result.get("rtnList") or []
+        searched_rows += len(rows)
+        for row in rows:
+            title = str(row.get("INFO_SJ") or "").strip()
+            # 검색 API는 첨부파일 본문도 검색하므로 제목을 반드시 재검사한다.
+            if not title or keyword not in title:
+                continue
+
+            agency = str(row.get("PROC_INSTT_NM") or "").strip()
+            department = str(row.get("NFLST_CHRG_DEPT_NM") or "").strip()
+            is_seoul = agency == "서울특별시" or any(
+                agency == f"서울특별시 {gu}"
+                or f"서울특별시 {gu}" in department
+                for gu in target_gu
+            )
+            if not is_seoul:
+                continue
+
+            doc_id = str(row.get("PRDCTN_INSTT_REGIST_NO") or "").strip()
+            produced = str(row.get("PRDCTN_DT") or "").strip()
+            inst_type = str(row.get("INSTT_SE_CD") or "").strip()
+            if not doc_id:
+                continue
+            query = urlencode({
+                "prdnNstRgstNo": doc_id,
+                "prdnDt": produced,
+                "nstSeCd": inst_type,
+                "title": "기관장결재문서",
+            })
+            detail = (
+                "https://www.open.go.kr/othicInfo/infoList/infoListDetl3.do?"
+                + query
+            )
+            date_value = ""
+            if len(produced) >= 8 and produced[:8].isdigit():
+                date_value = f"{produced[:4]}-{produced[4:6]}-{produced[6:8]}"
+            display = f"[{agency or '서울특별시'}] {title}"
+            posts_by_id[doc_id] = {
+                "title": display,
+                "link": detail,
+                "date": date_value,
+            }
+
+    posts = sorted(
+        posts_by_id.values(), key=lambda post: post["date"], reverse=True
+    )
+    logger.info(
+        "%s: 정보공개포털 검색 행 %d개, 제목·서울기관 통과 %d건",
+        name or url, searched_rows, len(posts),
+    )
+    return posts
+
+
 def scrape_urban(url, keywords, row_keywords=(), name=""):
     """서울도시공간포털(urban.seoul.go.kr)의 JSON 목록을 읽는다.
 
@@ -170,7 +284,6 @@ def scrape_urban(url, keywords, row_keywords=(), name=""):
         headers={"User-Agent": USER_AGENT,
                  "Referer": "https://urban.seoul.go.kr/view/html/PMNU4010100001"},
         timeout=(15, 40),
-        verify=False,
     )
     response.raise_for_status()
     rows = response.json().get("content") or []
@@ -246,7 +359,6 @@ def scrape_commission(url, keywords, row_keywords=(), name=""):
         headers={"User-Agent": USER_AGENT,
                  "Referer": "https://commission.eseoul.go.kr/mainInitPlatForm.do"},
         timeout=(15, 40),
-        verify=False,
     )
     response.encoding = "utf-8"
     response.raise_for_status()
@@ -286,6 +398,8 @@ def scrape_commission(url, keywords, row_keywords=(), name=""):
 
 
 def scrape_board(url, keywords, row_keywords=(), name=""):
+    if "open.go.kr/othicInfo/infoList/mnstrSanDocList" in url:
+        return scrape_open_portal(url, keywords, row_keywords, name)
     if "openapi.seoul.go.kr" in url:
         return scrape_seoul_api(url, keywords, row_keywords, name)
     if "urban.seoul.go.kr" in url and ".json" in url:
@@ -299,7 +413,6 @@ def scrape_board(url, keywords, row_keywords=(), name=""):
             response = requests.get(
                 url,
                 headers={"User-Agent": USER_AGENT, "Referer": url},
-                verify=False,
                 timeout=(20, 40),
             )
             response.encoding = "utf-8"
@@ -319,14 +432,19 @@ def scrape_board(url, keywords, row_keywords=(), name=""):
 
     rows = soup.select(
         "table tbody tr, .board-list tr, .bbs-list tr, .list_type li, "
-        ".news-list li, .search-result-list li, .list-wrap li"
+        ".news-list li, .search-result-list li, .list-wrap li, "
+        ".bdList > ul > li"
     )
     if not rows:
         rows = soup.select(".title, .subject, .txt_left, .tit")
 
     posts = []
     for row in rows:
-        title_elem = row.select_one("a, .tit, .subject, .title")
+        # 제목 전용 칸/클래스를 먼저 사용한다. 일부 고시공고 표의 첫 링크는
+        # 제목이 아니라 고시 번호라 단순히 첫 <a>를 고르면 키워드를 놓친다.
+        title_elem = row.select_one(".subject a, .tit a, .title a")
+        if not title_elem:
+            title_elem = row.select_one(".subject, .tit, .title, .s a, a")
         if not title_elem:
             continue
 
@@ -355,10 +473,16 @@ def scrape_board(url, keywords, row_keywords=(), name=""):
             full_link = urljoin(url, link)
 
         date_val = ""
-        for elem in row.select("td, span, .date, .reg_date, .day"):
-            txt = elem.get_text(strip=True)
-            if re.search(r"\d{2,4}[-./]\d{1,2}[-./]\d{1,2}", txt):
-                date_val = txt
+        # 명시적 날짜 클래스를 우선하고, 표에서는 보통 뒤쪽인 날짜 칸부터 본다.
+        date_elements = list(row.select(".date, .reg_date, .day"))
+        if not date_elements:
+            date_elements = list(reversed(row.select("td")))
+        if not date_elements:
+            date_elements = list(row.select("span"))
+        for elem in date_elements:
+            match = DATE_RE.search(elem.get_text(" ", strip=True))
+            if match:
+                date_val = match.group()
                 break
 
         posts.append({"title": title, "link": full_link, "date": date_val})
