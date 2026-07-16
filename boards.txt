@@ -16,7 +16,7 @@
 # 열람공고(주민의견제출): 14개 구 전체 모니터링 (제목 키워드 없이 구로만 필터)
 도시계획 열람공고 | https://urban.seoul.go.kr/wrtanc/getWrtancList.json?searchGubun=ing&pageSize=100 | | 강남구,강동구,광진구,동대문구,동작구,마포구,서대문구,서초구,성동구,송파구,영등포구,용산구,종로구,중구
 # 결정고시: 4개 유형(결정고시·지구단위계획·정비사업구역계·도시개발사업 관련) 제목 키워드 + 14개 구(구 이름) 필터
-도시계획 결정고시 | https://urban.seoul.go.kr/ntfc/getNtfcList.json?pageSize=100 | 지구단위계획,정비사업,정비구역,정비계획,재개발,재건축,도시개발,모아타운,신속통합,주택재개발,주택재건축 | 강남구,강동구,광진구,동대문구,동작구,마포구,서대문구,서초구,성동구,송파구,영등포구,용산구,종로구,중구
+도시계획 결정고시 | https://urban.seoul.go.kr/ntfc/getNtfcList.json?pageSize=100 | 지구단위계획,정비사업,정비구역,정비계획,재개발,재건축,도시개발,모아타운,신속통합,주택재개발,주택재건축,도심복합 | 강남구,강동구,광진구,동대문구,동작구,마포구,서대문구,서초구,성동구,송파구,영등포구,용산구,종로구,중구
 # 서울시결재문서(opengov)는 해외 서버 차단 + API 부재로 감시 불가하여 비활성화
 # 서울시결재문서 | https://opengov.seoul.go.kr/sanction/list | 재개발,신속통합,일대,후보지,수권,정비계획,동의서
 
@@ -44,20 +44,20 @@
 강동구 | https://www.gangdong.go.kr/web/newportal/bbs/b_111
 
 # ── 고시공고/공지 게시판 + 키워드 필터 ──
-마포구 | https://www.mapo.go.kr/site/main/board/notice/list?baCommSelec=false&sc=&sv=&pageSize=10 | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
-성동구 | https://www.sd.go.kr/main/selectBbsNttList.do?key=1307&bbsNo=166&integrDeptCode=&searchCtgry=&searchCnd=SJ&searchKrwd= | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
+마포구 | https://www.mapo.go.kr/site/main/board/notice/list?baCommSelec=false&sc=&sv=&pageSize=10 | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지,모아타운,도심복합
+성동구 | https://www.sd.go.kr/main/selectBbsNttList.do?key=1307&bbsNo=166&integrDeptCode=&searchCtgry=&searchCnd=SJ&searchKrwd= | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지,모아타운,도심복합
 성동구 정보공개 | https://www.sd.go.kr/main/selectOpenOrginlList.do?key=1270 | 재개발,도심복합,신속통합,모아타운
-영등포구 | http://openapi.seoul.go.kr:8088/{KEY}/json/YdpNewsNoticeList/1/30/ | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
-광진구 | https://www.gwangjin.go.kr/portal/bbs/B0000001/list.do?pageIndex=1&menuNo=200190&deptId=&searchCnd=1&searchWrd=&sdate=&edate= | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
-광진구 정보공개 | https://www.gwangjin.go.kr/portal/singl/openApi/openDocList.do?menuNo=200110 | 신속통합,모아타운,재개발
-광진구 고시공고 입법예고 | https://www.gwangjin.go.kr/portal/bbs/B0000378/list.do?menuNo=200192 | 신속통합,모아타운,재개발
-중구 | https://www.junggu.seoul.kr/content.do?cmsid=14232 | 재개발,신속통합,모아타운
-서대문구 | https://www.sdm.go.kr/news/notice/notice.do | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
-서초구 공지 | http://openapi.seoul.go.kr:8088/{KEY}/json/SeochoNewsNoticeList/1/30/ | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
-서초구 도시계획 | https://www.seocho.go.kr/site/seocho/ex/bbs/List.do?cbIdx=270 | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
-송파구 | https://www.songpa.go.kr/www/sub.do?key=2776 | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
+영등포구 | http://openapi.seoul.go.kr:8088/{KEY}/json/YdpNewsNoticeList/1/30/ | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지,모아타운,도심복합
+광진구 | https://www.gwangjin.go.kr/portal/bbs/B0000001/list.do?pageIndex=1&menuNo=200190&deptId=&searchCnd=1&searchWrd=&sdate=&edate= | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지,모아타운,도심복합
+광진구 정보공개 | https://www.gwangjin.go.kr/portal/singl/openApi/openDocList.do?menuNo=200110 | 신속통합,모아타운,재개발,도심복합
+광진구 고시공고 입법예고 | https://www.gwangjin.go.kr/portal/bbs/B0000378/list.do?menuNo=200192 | 신속통합,모아타운,재개발,도심복합
+중구 | https://www.junggu.seoul.kr/content.do?cmsid=14232 | 재개발,신속통합,모아타운,도심복합
+서대문구 | https://www.sdm.go.kr/news/notice/notice.do | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지,모아타운,도심복합
+서초구 공지 | http://openapi.seoul.go.kr:8088/{KEY}/json/SeochoNewsNoticeList/1/30/ | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지,모아타운,도심복합
+서초구 도시계획 | https://www.seocho.go.kr/site/seocho/ex/bbs/List.do?cbIdx=270 | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지,모아타운,도심복합
+송파구 | https://www.songpa.go.kr/www/sub.do?key=2776 | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지,모아타운,도심복합
 # 양천구는 해외 서버 차단 + 열린데이터광장 API 부재로 감시 불가하여 비활성화
-# 양천구 | https://www.yangcheon.go.kr/site/yangcheon/ex/seol/seolCollectList.do | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지
+# 양천구 | https://www.yangcheon.go.kr/site/yangcheon/ex/seol/seolCollectList.do | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지,모아타운,도심복합
 
 # ── 정보공개포털(open.go.kr) ──
 # 메인페이지+SPA 라우팅(#1)이라 자바스크립트로 목록을 불러올 가능성이 높음.
