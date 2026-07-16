@@ -77,6 +77,45 @@ def load_boards():
 
 TITLE_KEYS = ("TITLE", "POST_TITLE", "SJ", "NTT_SJ", "SUBJECT", "DOC_NM", "NEWS_TITLE", "TIT")
 DATE_RE = re.compile(r"\d{4}[-./]\d{1,2}[-./]\d{1,2}")
+# 한 글 행에서 여러 날짜(공고일·게시기간 종료일 등)를 모두 뽑기 위한 패턴(2자리 연도도 허용)
+DATE_ALL_RE = re.compile(r"\d{2,4}[-./]\d{1,2}[-./]\d{1,2}")
+
+
+def _parse_date(s):
+    parts = re.split(r"[-./]", s)
+    if len(parts) != 3:
+        return None
+    try:
+        y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+    except ValueError:
+        return None
+    if y < 100:
+        y += 2000
+    try:
+        return date(y, m, d)
+    except ValueError:
+        return None
+
+
+def pick_posting_date(candidates):
+    """게시판 한 행에서 찾은 날짜 후보들 중 실제 '공고일'을 고른다.
+
+    고시공고 목록은 공고일과 함께 게시기간 종료일(마감일, 미래 날짜)을 같이 보여주는
+    경우가 많다. 스크래퍼가 실행마다 다른 칸을 잡으면 알림 날짜가 틀리거나(예: 8월로 표시)
+    같은 글이 날짜별로 중복 알림되므로, 미래 날짜(마감일)는 배제하고 오늘까지의 날짜 중
+    가장 최근(공고일)을 택한다. 판단이 불가하면 첫 후보를 그대로 쓴다.
+    """
+    if not candidates:
+        return ""
+    today = date.today()
+    limit = today + timedelta(days=1)  # 러너(UTC)/게시판(KST) 시차 흡수용 하루 여유
+    parsed = [(d, raw) for raw in candidates if (d := _parse_date(raw))]
+    if not parsed:
+        return candidates[0]
+    past = [(d, raw) for d, raw in parsed if d <= limit]
+    if past:
+        return max(past, key=lambda p: p[0])[1]  # 오늘까지 중 가장 최근 = 공고일
+    return min(parsed, key=lambda p: p[0])[1]     # 전부 미래면 가장 이른 날짜
 
 # 서울 자치구 법정동 코드 앞 5자리 → 구 이름
 SEOUL_GU_CODE = {
@@ -472,18 +511,9 @@ def scrape_board(url, keywords, row_keywords=(), name=""):
         else:
             full_link = urljoin(url, link)
 
-        date_val = ""
-        # 명시적 날짜 클래스를 우선하고, 표에서는 보통 뒤쪽인 날짜 칸부터 본다.
-        date_elements = list(row.select(".date, .reg_date, .day"))
-        if not date_elements:
-            date_elements = list(reversed(row.select("td")))
-        if not date_elements:
-            date_elements = list(row.select("span"))
-        for elem in date_elements:
-            match = DATE_RE.search(elem.get_text(" ", strip=True))
-            if match:
-                date_val = match.group()
-                break
+        # 행에서 날짜를 모두 모아 공고일을 고른다(게시기간 종료일 등 미래 날짜 배제).
+        date_candidates = DATE_ALL_RE.findall(row.get_text(" ", strip=True))
+        date_val = pick_posting_date(date_candidates)
 
         posts.append({"title": title, "link": full_link, "date": date_val})
 
