@@ -110,7 +110,14 @@ def is_neighborhood_facility(atcl_no):
             timeout=(10, 20),
         )
         r.raise_for_status()
-        return "근린생활시설" in r.text
+        idx = r.text.find("근린생활시설")
+        if idx == -1:
+            return False
+        # 매물 자체가 아니라 혼합용도 건물 설명·용도변경 이력·무관한 문구 때문에
+        # false positive가 날 수 있어, 판단 근거를 확인할 수 있도록 앞뒤 문맥을 남긴다.
+        snippet = r.text[max(0, idx - 60):idx + 60].replace("\n", " ")
+        logger.info("매물 %s 근린생활시설 문구 발견, 문맥: ...%s...", atcl_no, snippet)
+        return True
     except Exception as e:
         logger.warning("매물 %s 건축물용도 확인 실패(제외하지 않음): %s", atcl_no, e)
         return False
