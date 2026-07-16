@@ -107,6 +107,27 @@ def matches(item):
     return True
 
 
+def _zone_key(item):
+    # 재개발구역 단위로 묶는 키 — 구역 고유id가 있으면 그걸 쓰고, 없으면 구역명,
+    # 그마저 없으면 구+동으로 대체한다. (atcl_nm은 매물 개별 이름이라 구역 구분에 부적합)
+    return (
+        item.get("redevelopment_id")
+        or item.get("redevelopment_area")
+        or (item.get("division"), item.get("sector"))
+    )
+
+
+def keep_cheapest_per_zone(items):
+    # 같은 재개발구역에서 5억 이하 매물이 여러 건 나오면 그중 최저가 1건만 남긴다.
+    best = {}
+    for x in items:
+        key = _zone_key(x)
+        prc = int(x.get("prc") or 0)
+        if key not in best or prc < int(best[key].get("prc") or 0):
+            best[key] = x
+    return list(best.values())
+
+
 def _fmt_eok(eok):
     # 3.60 -> 3.6, 3.00 -> 3 처럼 불필요한 끝자리 0을 없앤다
     return f"{eok:.2f}".rstrip("0").rstrip(".")
@@ -216,7 +237,8 @@ def main():
     logger.info("받은 매물 %d건", len(listings))
 
     matched = [x for x in listings if matches(x)]
-    logger.info("필터 통과(재개발구역·14구·다세대·5억이하) %d건", len(matched))
+    matched = keep_cheapest_per_zone(matched)
+    logger.info("필터 통과(재개발구역·14구·다세대·5억이하, 구역별 최저가만) %d건", len(matched))
 
     seen = load_seen()
     seen_set = set(seen)
