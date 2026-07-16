@@ -138,6 +138,7 @@
   "http://openapi.seoul.go.kr:8088/{KEY}/json/SeoulNewsList/1/50/": {
     "name": "서울시보도자료",
     "keys": [
+      "[카드뉴스] 서울 전역 136곳에서 힘차게! 서울의 첫 번째 모아타운!#2026/07/6",
       "[Shorts] 멈춰버린 현저동, 모아타운과 함께 다시 시간이 흐르기 시작했습니다.(서대문구 현저동 1-5일대 모아타운)#2026/07/6"
     ]
   },
@@ -350,25 +351,26 @@
   "https://www.gwangjin.go.kr/portal/bbs/B0000378/list.do?menuNo=200192": {
     "name": "광진구 고시공고 입법예고",
     "keys": [
+      "중곡1동 B구역 주택재개발사업(중곡1동 232-1번지 일대) 주민참여단 모집결과 및 추가모집 공고#2027-07-16",
       "중곡1동 B구역 주택재개발사업(중곡1동 232-1번지 일대) 주민참여단 모집결과 및 추가모집 공고#2026-07-16"
     ]
   },
   "https://www.jongno.go.kr/portal/bbs/selectBoardList.do?bbsId=BBSMSTR_000000000271&menuNo=1756&menuId=1756": {
     "name": "종로구 고시공고",
     "keys": [
+      "돈의문2재정비촉진구역 도시정비형 재개발사업 사업시행계획(변경)인가 고시#2026-08-16",
       "돈의문2재정비촉진구역 도시정비형 재개발사업 사업시행계획(변경)인가 고시#2026-07-16"
     ]
   },
-  "https://www.sdm.go.kr/admininfo/public/publicDocList.do": {
-    "name": "서대문구 결재문서",
-    "keys": []
+  "https://www.yangcheon.go.kr/site/yangcheon/ex/seol/seolCollectList.do": {
+    "name": "양천구",
+    "keys": [
+      "조합설립인가 취소 고시(신월동 461번지 일원 가로주택정비사업)#2026-07-16"
+    ]
   },
-  "https://www.yongsan.go.kr/site/ysOpen/publicdata/openList.do?sitecdv=S0000800&menucdv=07000000": {
-    "name": "용산구 결재문서",
-    "keys": []
-  },
-  "https://www.gangdong.go.kr/web/newportal/contents/gdp_003_002_003_004": {
-    "name": "강동구 결재문서",
-    "keys": []
+  "https://www.open.go.kr/othicInfo/infoList/mnstrSanDocList.do": {
+    "name": "정보공개포털 서울 결재문서",
+    "keys": [],
+    "error": true
   }
 }
