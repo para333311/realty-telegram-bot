@@ -109,15 +109,13 @@ def matches(item):
 def format_message(item):
     prc = int(item.get("prc") or 0)
     eok = prc / 100_000_000
-    gu = item.get("division") or ""
-    dong = item.get("sector") or ""
     zone = item.get("redevelopment_area") or item.get("atcl_nm") or "매물"
     rtype = item.get("redevelopment_type") or ""
     stage = item.get("redevelopment_stage") or ""
     is_sinsok = "신속통합" in rtype or "신통기획" in rtype or "신속통합" in stage
 
     if is_sinsok:
-        rtype_txt = f"🔥{rtype}" if rtype else ""
+        rtype_txt = "🔥신속통합"
     elif "모아타운" in rtype:
         rtype_txt = f"🟢{rtype}"
     else:
@@ -131,13 +129,9 @@ def format_message(item):
     # booriny는 네이버 매물을 취합 — 네이버부동산 상세로 연결
     link = f"https://m.land.naver.com/article/info/{atcl_no}" if atcl_no else BASE
 
-    bild_nm = item.get("bild_nm") or ""
-    address = " ".join(x for x in (gu, dong, bild_nm) if x)
-
     return (
         f"[{badge}]\n"
         f"{eok:.2f}억{spc_txt}\n"
-        f"{address}\n"
         f"{link}"
     )
 
