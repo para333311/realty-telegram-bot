@@ -98,6 +98,24 @@ def fetch_listings(session, limit=2000):
     return listings
 
 
+def is_neighborhood_facility(atcl_no):
+    """네이버부동산 매물 상세 페이지에서 건축물용도가 근린생활시설인지 확인한다.
+    페이지 구조가 바뀌거나 요청이 실패하면 판단할 수 없으므로 제외하지 않는다(fail-open)."""
+    if not atcl_no:
+        return False
+    try:
+        r = requests.get(
+            f"https://m.land.naver.com/article/info/{atcl_no}",
+            headers={"User-Agent": USER_AGENT},
+            timeout=(10, 20),
+        )
+        r.raise_for_status()
+        return "근린생활시설" in r.text
+    except Exception as e:
+        logger.warning("매물 %s 건축물용도 확인 실패(제외하지 않음): %s", atcl_no, e)
+        return False
+
+
 def matches(item):
     # 재개발구역 매물만 (booriny 사이트가 보여주는 대상). 이 필터가 핵심.
     if not item.get("is_redevelopment"):
@@ -251,8 +269,9 @@ def main():
     logger.info("받은 매물 %d건", len(listings))
 
     matched = [x for x in listings if matches(x)]
+    matched = [x for x in matched if not is_neighborhood_facility(x.get("atcl_no"))]
     matched = keep_cheapest_per_zone(matched)
-    logger.info("필터 통과(재개발구역·14구·다세대·5억이하, 구역별 최저가만) %d건", len(matched))
+    logger.info("필터 통과(재개발구역·14구·다세대·5억이하·근린생활시설제외, 구역별 최저가만) %d건", len(matched))
 
     seen = load_seen()
     seen_set = set(seen)
