@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urljoin
 
@@ -40,6 +41,8 @@ BOARDS_FILE = "boards.txt"
 SEEN_FILE = "seen_boards.json"
 SEEN_KEEP = 300  # 게시판별로 보관할 확인한 공고 수
 FETCH_WORKERS = 5
+FETCH_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = 5
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -291,21 +294,25 @@ def scrape_board(url, keywords, row_keywords=(), name=""):
         return scrape_commission(url, keywords, row_keywords, name)
     """게시판 목록에서 (제목, 링크, 날짜) 목록을 추출한다. jejeboard의 검증된 로직."""
     last_error = None
-    for attempt in range(2):  # 느린 사이트를 위해 1회 재시도
+    for attempt in range(FETCH_ATTEMPTS):
         try:
             response = requests.get(
                 url,
                 headers={"User-Agent": USER_AGENT, "Referer": url},
                 verify=False,
-                timeout=(15, 40),
+                timeout=(20, 40),
             )
             response.encoding = "utf-8"
             response.raise_for_status()
             break
         except Exception as e:
             last_error = e
-            if attempt == 0:
-                logger.info("retrying %s after error: %s", name or url, e)
+            if attempt < FETCH_ATTEMPTS - 1:
+                delay = RETRY_BACKOFF_SECONDS * (2 ** attempt)
+                logger.info(
+                    "retrying %s in %ss after error: %s", name or url, delay, e
+                )
+                time.sleep(delay)
     else:
         raise last_error
     soup = BeautifulSoup(response.text, "html.parser")

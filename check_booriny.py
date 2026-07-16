@@ -30,7 +30,6 @@ import time
 from datetime import datetime
 
 import requests
-import urllib3
 
 from check_once import send_message
 
@@ -40,8 +39,6 @@ try:
     load_dotenv()
 except ImportError:
     pass
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -79,7 +76,7 @@ def login(session):
     r = session.post(
         BASE + "/api/auth/v2/login",
         json={"email": email, "password": pw},
-        timeout=(15, 30), verify=False,
+        timeout=(15, 30),
     )
     r.raise_for_status()
     if not r.json().get("success"):
@@ -89,7 +86,7 @@ def login(session):
 def fetch_listings(session, limit=2000):
     # /api/listings는 재개발구역 매물뿐 아니라 네이버 전체 매물을 반환하고
     # 서버측 필터 파라미터가 먹지 않으므로, 넉넉히 받아 클라이언트에서 거른다.
-    r = session.get(BASE + "/api/listings", params={"limit": limit}, timeout=(15, 60), verify=False)
+    r = session.get(BASE + "/api/listings", params={"limit": limit}, timeout=(15, 60))
     r.raise_for_status()
     listings = r.json().get("data", {}).get("listings", [])
     # 첫 매물의 필드 로깅 (날짜 필드 확인용)
