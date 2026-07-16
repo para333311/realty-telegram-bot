@@ -24,7 +24,9 @@ booriny.com에 로그인해 재개발 구역 내 최신 매물을 확인하고,
 import json
 import logging
 import os
+import re
 import time
+from datetime import datetime
 
 import requests
 import urllib3
@@ -128,13 +130,33 @@ def format_message(item):
     )
 
 
+def _normalize_date(value):
+    """날짜 필드를 '하루' 단위로 정규화한다.
+
+    이 스크립트는 30분마다 실행되는데, 날짜 필드에 시:분:초까지 포함돼 있으면
+    (또는 조회 시점 타임스탬프라면) 매 실행마다 값이 달라져 같은 매물이 하루에
+    수십 번 알림되는 문제가 생긴다. 그래서 날짜 부분만 추출해 하루 단위로 묶는다.
+    """
+    s = str(value).strip()
+    m = re.match(r"\d{4}[-./]\d{2}[-./]\d{2}", s)
+    if m:
+        return m.group(0)
+    if s.isdigit() and len(s) in (10, 13):  # epoch(초) 또는 epoch(밀리초)
+        try:
+            ts = int(s) / (1000 if len(s) == 13 else 1)
+            return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+        except (ValueError, OSError, OverflowError):
+            pass
+    return s
+
+
 def get_listing_key(item):
     """매물의 고유 키를 생성 (ID + 날짜 조합으로 같은 매물이라도 새로 올라오면 다시 알림)"""
     item_id = str(item.get("id") or "")
     # 가능한 날짜 필드명들 (첫 번째 존재하는 것 사용)
     for date_field in ["reg_dt", "reg_date", "regDate", "rlet_reg_dt", "created_at", "updated_at"]:
         if date_field in item and item[date_field]:
-            return f"{item_id}:{item[date_field]}"
+            return f"{item_id}:{_normalize_date(item[date_field])}"
     # 날짜가 없으면 ID만 사용 (하위호환성)
     return item_id
 
@@ -186,9 +208,6 @@ def main():
     seen_set = set(seen)
     first_run = not seen
 
-    # ID + 날짜 조합으로 새 매물 판정 (같은 ID라도 새로운 리스팅 날짜면 다시 알림)
-    new_items = [x for x in matched if get_listing_key(x) not in seen_set]
-
     if first_run:
         # 첫 실행: 기존 매물은 알림 없이 기준선으로 저장
         for x in matched:
@@ -202,9 +221,27 @@ def main():
         logger.info("첫 실행: 기준선 %d건 저장", len(matched))
         return
 
+    # 구 형식(ID만) 저장 항목 — ID+날짜 형식 도입 전에 이미 알림을 보냈던 매물.
+    # 이번 실행에서 처음 마주치면 재알림 없이 신 형식(ID:날짜)으로 조용히 업그레이드한다.
+    legacy_ids = {s for s in seen if ":" not in s}
+
+    to_alert = []
+    for x in matched:
+        key = get_listing_key(x)
+        if key in seen_set:
+            continue
+        item_id = str(x.get("id") or "")
+        if item_id in legacy_ids:
+            if item_id in seen:
+                seen.remove(item_id)
+            seen.append(key)
+            legacy_ids.discard(item_id)
+            continue
+        to_alert.append(x)
+
     try:
         # 오래된 것부터 발송(리스트는 최신순이므로 뒤집는다)
-        for x in reversed(new_items):
+        for x in reversed(to_alert):
             send_message(token, chat_id, format_message(x))
             seen.append(get_listing_key(x))
             logger.info("알림: %s %s %s", x.get("division"), x.get("sector"), x.get("prc"))
