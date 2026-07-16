@@ -21,6 +21,7 @@ booriny.com에 로그인해 재개발 구역 내 최신 매물을 확인하고,
 알림 메시지에 구역명·유형·단계를 함께 표시만 한다.
 """
 
+import html
 import json
 import logging
 import os
@@ -106,20 +107,27 @@ def matches(item):
     return True
 
 
+def _fmt_eok(eok):
+    # 3.60 -> 3.6, 3.00 -> 3 처럼 불필요한 끝자리 0을 없앤다
+    return f"{eok:.2f}".rstrip("0").rstrip(".")
+
+
 def format_message(item):
+    """텔레그램 HTML 파싱 모드로 보낼 메시지. <b> 굵게 태그를 쓰므로
+    사용자 입력 유래 텍스트(구역명·유형·단계)는 html.escape로 이스케이프한다."""
     prc = int(item.get("prc") or 0)
     eok = prc / 100_000_000
-    zone = item.get("redevelopment_area") or item.get("atcl_nm") or "매물"
+    zone = html.escape(item.get("redevelopment_area") or item.get("atcl_nm") or "매물")
     rtype = item.get("redevelopment_type") or ""
-    stage = item.get("redevelopment_stage") or ""
+    stage = html.escape(item.get("redevelopment_stage") or "")
     is_sinsok = "신속통합" in rtype or "신통기획" in rtype or "신속통합" in stage
 
     if is_sinsok:
-        rtype_txt = "🔥신속통합"
+        rtype_txt = "🔴신속통합"
     elif "모아타운" in rtype:
-        rtype_txt = f"🟢{rtype}"
+        rtype_txt = f"🟢{html.escape(rtype)}"
     else:
-        rtype_txt = rtype
+        rtype_txt = html.escape(rtype)
 
     zone_rtype = " ".join(x for x in (zone, rtype_txt) if x)
     badge = " · ".join(x for x in (zone_rtype, stage) if x)
@@ -131,7 +139,7 @@ def format_message(item):
 
     return (
         f"[{badge}]\n"
-        f"{eok:.2f}억{spc_txt}\n"
+        f"<b>{_fmt_eok(eok)}억</b>{spc_txt}\n"
         f"{link}"
     )
 
@@ -248,7 +256,7 @@ def main():
     try:
         # 오래된 것부터 발송(리스트는 최신순이므로 뒤집는다)
         for x in reversed(to_alert):
-            send_message(token, chat_id, format_message(x), disable_preview=True)
+            send_message(token, chat_id, format_message(x), disable_preview=True, parse_mode="HTML")
             seen.append(get_listing_key(x))
             logger.info("알림: %s %s %s", x.get("division"), x.get("sector"), x.get("prc"))
     finally:

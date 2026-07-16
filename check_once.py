@@ -65,7 +65,7 @@ def save_seen(seen):
         f.write("\n")
 
 
-def send_message(token, chat_id, text, disable_preview=False):
+def send_message(token, chat_id, text, disable_preview=False, parse_mode=None):
     """텔레그램 메시지를 보낸다. 발송 간격을 지키고, 요청 제한(429)이면 기다렸다 재시도."""
     global _last_send_at
     wait = _last_send_at + SEND_INTERVAL - time.time()
@@ -74,6 +74,8 @@ def send_message(token, chat_id, text, disable_preview=False):
     payload = {"chat_id": chat_id, "text": text}
     if disable_preview:
         payload["disable_web_page_preview"] = True
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     for attempt in range(3):
         response = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
