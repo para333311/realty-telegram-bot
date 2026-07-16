@@ -172,3 +172,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # 같은 네이버 검색 시크릿으로 서울정보소통광장 차단 우회 감시도 이어서 실행한다.
+    from check_opengov import main as check_opengov
+
+    check_opengov()
