@@ -50,10 +50,19 @@ LINK_HINT = "opengov.seoul.go.kr/sanction"
 KEYWORDS = ["후보지", "재개발", "재건축", "신속통합", "모아타운", "정비사업"]
 
 TAG_RE = re.compile(r"<[^>]+>")
+# 네이버 검색 API가 간혹 link를 "https://opengov.seoul.go.kr/sanction/:/opengov...
+# .seoul.go.kr/sanction/33732288"처럼 도메인이 중복된 형태로 반환하는 경우가 있어,
+# 실제 문서 경로(마지막 sanction/숫자)만 정규식으로 뽑아 정리한다.
+SANCTION_RE = re.compile(r"opengov\.seoul\.go\.kr/sanction/\d+")
 
 
 def clean(text):
     return html.unescape(TAG_RE.sub("", text or "")).strip()
+
+
+def clean_link(link):
+    matches = SANCTION_RE.findall(link or "")
+    return f"https://{matches[-1]}" if matches else link
 
 
 def search(keyword, client_id, client_secret):
@@ -79,9 +88,8 @@ def is_sanction(item):
     return LINK_HINT in (item.get("link") or "")
 
 
-def format_message(item, keyword):
+def format_message(item, keyword, link):
     title = clean(item.get("title")) or "(제목 없음)"
-    link = item.get("link") or ""
     return (
         f"📄 [서울시 결재문서] '{keyword}' 관련\n"
         f"{title}\n"
@@ -124,7 +132,7 @@ def main():
         hits = [x for x in items if is_sanction(x)]
         logger.info("'%s' 검색 %d건 중 결재문서 %d건", kw, len(items), len(hits))
         for x in hits:
-            link = x.get("link")
+            link = clean_link(x.get("link"))
             if link and link not in found:
                 found[link] = (x, kw)
 
@@ -152,7 +160,7 @@ def main():
     try:
         for lk in new_links:
             item, kw = found[lk]
-            send_message(token, chat_id, format_message(item, kw))
+            send_message(token, chat_id, format_message(item, kw, lk))
             seen.append(lk)
             logger.info("알림: [%s] %s", kw, clean(item.get("title")))
     finally:
