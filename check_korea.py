@@ -88,41 +88,60 @@ def fetch_page(session, page):
         doc_id = m.group(1)
         if doc_id in seen_ids:
             continue
-        # 제목: <strong class="element-invisible">제목 : </strong>는 화면낭독기 전용
-        # 숨김 라벨이라 제외하고, 옆의 <span> 실제 제목만 사용한다.
+
+        # 실제 페이지 구조(디버그로 확인됨):
+        # <li>
+        #   <div class="title-area">
+        #     <div class="title-wrap"><a><strong class="element-invisible">제목 : </strong>
+        #       <span>실제제목</span></a><p class="title-category"><span>공개여부</span><span>기관명</span></p>
+        #     </div>
+        #   </div>
+        #   <p class="title-info">
+        #     <span class="date"><strong class="element-invisible">등록일 : </strong> 날짜</span>
+        #     <span class="dept"><strong class="element-invisible">부서 : </strong> 담당부서</span>
+        #   </p>
+        # </li>
+
+        # 제목: "제목 : " 라벨(화면낭독기 전용)은 제외하고 옆 <span> 실제 텍스트만 사용
         title_span = a.find("span")
         title = title_span.get_text(" ", strip=True) if title_span else a.get_text(" ", strip=True)
         title = re.sub(r"^제목\s*[:：]\s*", "", title).strip()
         if len(title) < 5:
             continue
-        # title-wrap div: 제목 + <p class="title-category">공개여부/기관명</p>
-        title_wrap = a.find_parent("div", class_="title-wrap") or a.find_parent(["li", "tr", "div"]) or a.parent
+
+        li_row = a.find_parent("li") or a.find_parent(["tr", "div"]) or a.parent
+
         agency = ""
-        category_p = title_wrap.find("p", class_="title-category") if title_wrap else None
+        category_p = li_row.find("p", class_="title-category") if li_row else None
         if category_p:
             spans = category_p.find_all("span")
             if spans:
                 agency = spans[-1].get_text(strip=True)
-        # 날짜는 title-wrap/title-area 안에도 없어서, 두 단계 더 위(행 전체)에서 찾는다.
-        outer_row = title_wrap.find_parent(["li", "tr", "div"]) if title_wrap else None  # title-area
-        grand_row = outer_row.find_parent(["li", "tr", "div"]) if outer_row else None    # 그 위(행 전체)
-        date_source = grand_row or outer_row or title_wrap or a.parent
-        row_text = date_source.get_text(" ", strip=True) if date_source else title
-        date_m = DATE_RE.search(row_text)
-        date_val = date_m.group(0).replace(".", "-") if date_m else ""
+
+        date_val, dept = "", ""
+        info_p = li_row.find("p", class_="title-info") if li_row else None
+        if info_p:
+            date_span = info_p.find("span", class_="date")
+            if date_span:
+                date_val = re.sub(r"^등록일\s*[:：]\s*", "", date_span.get_text(" ", strip=True)).strip()
+            dept_span = info_p.find("span", class_="dept")
+            if dept_span:
+                dept = re.sub(r"^부서\s*[:：]\s*", "", dept_span.get_text(" ", strip=True)).strip()
+
+        if not date_val:
+            # 폴백: 구조가 다른 행이면 li 전체 텍스트에서 정규식으로 날짜를 찾는다.
+            row_text = li_row.get_text(" ", strip=True) if li_row else title
+            date_m = DATE_RE.search(row_text)
+            date_val = date_m.group(0).replace(".", "-") if date_m else ""
+
         seen_ids.add(doc_id)
         item = {
             "id": doc_id,
             "title": title,
-            "agency": agency,
+            "agency": dept or agency,  # 부서명이 더 구체적이라 우선 사용
             "date": date_val,
             "link": f"{BASE}/sanction/{doc_id}",
-            "row_text": row_text[:250],
         }
-        if DEBUG:
-            # [DEBUG] 날짜를 못 찾을 때 원인 파악용으로, 더 넓은 범위의 HTML을 남긴다.
-            widest = grand_row or outer_row or title_wrap
-            item["raw_html"] = str(widest)[:1500] if widest else str(a)[:1500]
         items.append(item)
     return items
 
@@ -174,10 +193,6 @@ def main():
         for x in items[:15]:
             hit = "★" if matches(x) else " "
             logger.info("[DEBUG]%s id=%s [%s|%s] %s", hit, x["id"], x["date"], x.get("agency", ""), x["title"][:60])
-        logger.info("[DEBUG] 첫 행 원본텍스트 예: %s", items[0]["row_text"] if items else "(없음)")
-        # [DEBUG] 날짜/제목 파싱 정밀 튜닝을 위해 실제 행 HTML을 그대로 보여준다.
-        for i, x in enumerate(items[:3]):
-            logger.info("[DEBUG] 행%d 원본HTML: %s", i + 1, x.get("raw_html", ""))
         logger.info("[DEBUG] 디버그 모드: 알림/저장 생략")
         return
 
