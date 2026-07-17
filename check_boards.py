@@ -222,6 +222,7 @@ def scrape_open_portal(url, keywords, row_keywords=(), name=""):
 
     posts_by_id = {}
     searched_rows = 0
+    diag_agencies = {}  # [진단] 제목 키워드 통과 행의 실제 기관명 형식 확인용
     for keyword in search_terms:
         payload = {
             "kwd": keyword,
@@ -261,6 +262,10 @@ def scrape_open_portal(url, keywords, row_keywords=(), name=""):
 
             agency = str(row.get("PROC_INSTT_NM") or "").strip()
             department = str(row.get("NFLST_CHRG_DEPT_NM") or "").strip()
+            # [진단] 서울 필터 통과가 0건이라, 실제 기관명/부서명 형식을 샘플로 남긴다.
+            if "서울" in agency or "서울" in department:
+                diag_agencies.setdefault(f"{agency} | {department}", 0)
+                diag_agencies[f"{agency} | {department}"] += 1
             is_seoul = agency == "서울특별시" or any(
                 agency == f"서울특별시 {gu}"
                 or f"서울특별시 {gu}" in department
@@ -301,6 +306,12 @@ def scrape_open_portal(url, keywords, row_keywords=(), name=""):
         "%s: 정보공개포털 검색 행 %d개, 제목·서울기관 통과 %d건",
         name or url, searched_rows, len(posts),
     )
+    if diag_agencies:
+        # [진단] '서울' 포함 기관명/부서명 실제 형식 (통과 0건 원인 파악용)
+        logger.info(
+            "[진단] 정보공개포털 '서울' 포함 기관명 샘플: %s",
+            "; ".join(list(diag_agencies)[:15]),
+        )
     return posts
 
 
