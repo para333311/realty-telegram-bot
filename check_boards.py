@@ -222,7 +222,6 @@ def scrape_open_portal(url, keywords, row_keywords=(), name=""):
 
     posts_by_id = {}
     searched_rows = 0
-    diag_agencies = {}  # [진단] 제목 키워드 통과 행의 실제 기관명 형식 확인용
     for keyword in search_terms:
         payload = {
             "kwd": keyword,
@@ -254,17 +253,8 @@ def scrape_open_portal(url, keywords, row_keywords=(), name=""):
             )
         rows = result.get("rtnList") or []
         searched_rows += len(rows)
-        # [진단] 첫 행의 원본 필드명/값을 한 번만 통째로 남긴다(필드명 오류 여부 확인).
-        if rows and not diag_agencies.get("_raw"):
-            diag_agencies["_raw"] = json.dumps(rows[0], ensure_ascii=False)[:800]
         for row in rows:
             title = str(row.get("INFO_SJ") or "").strip()
-            # [진단] 제목 무관하게 모든 행의 기관명 후보 필드를 수집한다.
-            for fld in ("PROC_INSTT_NM", "INSTT_NM", "PRDCTN_INSTT_NM", "OWNER_INSTT_NM"):
-                val = str(row.get(fld) or "").strip()
-                if val:
-                    diag_agencies.setdefault(f"{fld}={val}", 0)
-                    diag_agencies[f"{fld}={val}"] += 1
             # 검색 API는 첨부파일 본문도 검색하므로 제목을 반드시 재검사한다.
             if not title or keyword not in title:
                 continue
@@ -311,15 +301,6 @@ def scrape_open_portal(url, keywords, row_keywords=(), name=""):
         "%s: 정보공개포털 검색 행 %d개, 제목·서울기관 통과 %d건",
         name or url, searched_rows, len(posts),
     )
-    if diag_agencies:
-        raw = diag_agencies.pop("_raw", "")
-        # [진단] 실제 기관명 필드/값 분포 (통과 0건 원인 파악용)
-        logger.info(
-            "[진단] 정보공개포털 기관명 필드 분포(상위 20): %s",
-            " || ".join(list(diag_agencies)[:20]),
-        )
-        if raw:
-            logger.info("[진단] 정보공개포털 첫 행 원본: %s", raw)
     return posts
 
 
