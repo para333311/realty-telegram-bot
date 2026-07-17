@@ -82,10 +82,15 @@ USER_AGENT = (
 )
 
 
-def fetch_page(session, page):
-    """결재문서 목록 한 페이지를 가져와 (id, 제목, 기관/부서, 날짜, 링크) 목록을 반환."""
-    # opengov 목록의 페이지 파라미터는 서버 확인 후 조정될 수 있다(디버그 모드로 검증).
-    params = {"page": page} if page > 1 else {}
+def fetch_page(session, page, extra_params=None):
+    """결재문서 목록 한 페이지를 가져와 (id, 제목, 기관/부서, 날짜, 링크) 목록을 반환.
+
+    extra_params에 {"searchKeyword": "재개발"} 등을 주면 서버단 검색 결과를 받는다
+    (목록 페이지 폼 필드로 확인됨: searchField/searchKeyword/startDate/endDate 등).
+    """
+    params = dict(extra_params or {})
+    if page > 1:
+        params["page"] = page
     r = session.get(
         LIST_URL, params=params,
         headers={"User-Agent": USER_AGENT, "Referer": LIST_URL},
@@ -94,19 +99,6 @@ def fetch_page(session, page):
     r.raise_for_status()
     r.encoding = "utf-8"
     soup = BeautifulSoup(r.text, "html.parser")
-
-    if DEBUG and page == 1:
-        logger.info("[DEBUG] HTTP %s, 본문 %d바이트", r.status_code, len(r.text))
-        # 목록 자체에 검색어(키워드) 파라미터가 있는지 확인 — 있으면 서버단에서
-        # 바로 필터링해 전체물량(소방서·병원 등)을 안 가져와도 되게 개선 가능.
-        forms = soup.find_all("form")
-        logger.info("[DEBUG] 폼 %d개", len(forms))
-        for i, f in enumerate(forms):
-            names = [el.get("name") for el in f.find_all(["input", "select", "textarea"]) if el.get("name")]
-            if names:
-                logger.info("[DEBUG] 폼#%d action=%s 필드: %s", i, f.get("action"), names)
-        srch_hits = sorted(set(re.findall(r"[a-zA-Z_][a-zA-Z0-9_]*(?:srch|Srch|keyword|Keyword|kwd|Kwd)[a-zA-Z0-9_]*", r.text)))
-        logger.info("[DEBUG] 검색관련 이름 후보: %s", srch_hits)
 
     items = []
     seen_ids = set()
@@ -193,6 +185,30 @@ def collect(session):
     return list(all_items.values())
 
 
+def collect_by_search(session):
+    """opengov 서버단 키워드 검색으로 수집한다.
+
+    전체 목록을 훑는 방식(collect)은 30분 사이 전체 결재문서가 75건을 넘으면
+    사이에 낀 문서를 놓칠 수 있는데, 서버 검색은 키워드별 결과만 받으므로
+    그 위험이 없다. 검색이 비정상(전 키워드 0건)이면 None을 반환해 폴백한다.
+    """
+    all_items = {}
+    for kw in KEYWORDS:
+        try:
+            items = fetch_page(session, 1, {"searchKeyword": kw})
+        except Exception as e:
+            logger.warning("opengov 검색(%s) 실패: %s", kw, e)
+            return None
+        if DEBUG:
+            logger.info("[DEBUG] opengov 검색 '%s': %d건", kw, len(items))
+        for it in items:
+            all_items.setdefault(it["id"], it)
+    if not all_items:
+        # '재개발' 등이 전부 0건일 수는 없으므로 파라미터가 안 먹는 것으로 보고 폴백
+        return None
+    return list(all_items.values())
+
+
 def matches(item):
     return any(k in item["title"] for k in KEYWORDS)
 
@@ -222,13 +238,22 @@ def collect_open_portal():
         else:
             base_payload.setdefault(name, el.get("value") or "")
 
+    # 기관유형(insttSeCd) 체크박스: 사이트 JS가 체크된 값들을 콤마로 합쳐 보낸다.
+    # 빈값이면 서버가 491(파라미터 오류)을 내는 것으로 보여, 전체 유형을 선택해 보낸다.
+    instt_vals = [el.get("value") for el in page_soup.find_all("input", attrs={"name": "insttSeCd"})
+                  if el.get("value")]
+    if instt_vals:
+        base_payload["insttSeCd"] = ",".join(dict.fromkeys(instt_vals))
+
     if DEBUG:
         logger.info("[DEBUG] 원문정보 페이지 폼 필드(%d개): %s",
                     len(base_payload), json.dumps(base_payload, ensure_ascii=False)[:1200])
-        # 본문 안의 orginlInfoList.ajax 호출부를 전부(주변 코드 포함) 출력
-        for n, m2 in enumerate(re.finditer(r"orginlInfoList\.ajax", page.text)):
-            snippet = page.text[max(0, m2.start() - 1000):m2.start() + 300]
-            logger.info("[DEBUG] 본문 ajax 호출부 #%d:\n%s", n + 1, snippet)
+        logger.info("[DEBUG] insttSeCd 체크박스 값: %s", instt_vals)
+        # searchFn이 param을 어떻게 채워 보내는지 — url 문자열 뒤쪽 코드가 핵심
+        m2 = re.search(r"orginlInfoList\.ajax", page.text)
+        if m2:
+            logger.info("[DEBUG] 본문 ajax 호출부(뒤쪽 확장):\n%s",
+                        page.text[max(0, m2.start() - 100):m2.start() + 2800])
         # 검색 로직이 외부 JS에 있을 수 있어 관련 JS 파일도 뒤져본다.
         scripts = [s.get("src") for s in page_soup.find_all("script") if s.get("src")]
         related = [s for s in scripts
@@ -369,9 +394,15 @@ def format_alert(x, source):
 def main():
     session = requests.Session()
 
-    # 1) 서울정보소통광장(opengov) 결재문서
-    items = collect(session)
-    matched = [x for x in items if matches(x)]
+    # 1) 서울정보소통광장(opengov) 결재문서 — 서버 검색 우선, 실패시 목록 스캔 폴백
+    items = collect_by_search(session)
+    if items is None:
+        logger.info("opengov 서버 검색 실패 → 전체 목록 스캔으로 폴백")
+        items = collect(session)
+    matched = sorted(
+        (x for x in items if matches(x)),
+        key=lambda x: x["date"],
+    )
     logger.info("결재문서 링크 %d개, 재개발 키워드 통과 %d개", len(items), len(matched))
 
     # 2) 정보공개포털(open.go.kr) 기관장 결재문서 — 실패해도 opengov 감시는 계속
@@ -421,8 +452,8 @@ def main():
         logger.info("정보공개포털 첫 회차: 기준선 %d개 저장", len(portal_items))
         known = set(saved)
 
-    # 오래된 것부터 발송 (opengov 목록은 최신순이라 뒤집고, 포털은 이미 날짜 오름차순)
-    to_send = [(x, "opengov") for x in reversed(matched) if x["id"] not in known]
+    # 오래된 것부터 발송 (둘 다 날짜 오름차순 정렬됨)
+    to_send = [(x, "opengov") for x in matched if x["id"] not in known]
     to_send += [(x, "portal") for x in portal_items if x["id"] not in known]
     try:
         for x, source in to_send:
