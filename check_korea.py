@@ -103,9 +103,10 @@ def fetch_page(session, page):
             spans = category_p.find_all("span")
             if spans:
                 agency = spans[-1].get_text(strip=True)
-        # 날짜는 title-wrap 안에 없어서, 한 단계 더 위(부모 행)에서 찾는다.
-        outer_row = title_wrap.find_parent(["li", "tr", "div"]) if title_wrap else None
-        date_source = outer_row or title_wrap or a.parent
+        # 날짜는 title-wrap/title-area 안에도 없어서, 두 단계 더 위(행 전체)에서 찾는다.
+        outer_row = title_wrap.find_parent(["li", "tr", "div"]) if title_wrap else None  # title-area
+        grand_row = outer_row.find_parent(["li", "tr", "div"]) if outer_row else None    # 그 위(행 전체)
+        date_source = grand_row or outer_row or title_wrap or a.parent
         row_text = date_source.get_text(" ", strip=True) if date_source else title
         date_m = DATE_RE.search(row_text)
         date_val = date_m.group(0).replace(".", "-") if date_m else ""
@@ -119,8 +120,9 @@ def fetch_page(session, page):
             "row_text": row_text[:250],
         }
         if DEBUG:
-            # [DEBUG] 날짜를 못 찾을 때 원인 파악용으로, 한 단계 더 넓은 범위의 HTML을 남긴다.
-            item["raw_html"] = str(outer_row or title_wrap)[:900] if (outer_row or title_wrap) else str(a)[:900]
+            # [DEBUG] 날짜를 못 찾을 때 원인 파악용으로, 더 넓은 범위의 HTML을 남긴다.
+            widest = grand_row or outer_row or title_wrap
+            item["raw_html"] = str(widest)[:1500] if widest else str(a)[:1500]
         items.append(item)
     return items
 
