@@ -215,16 +215,25 @@ def collect_open_portal():
     if DEBUG:
         logger.info("[DEBUG] 원문정보 페이지 폼 필드(%d개): %s",
                     len(base_payload), json.dumps(base_payload, ensure_ascii=False)[:1200])
-        ajax_calls = sorted(set(re.findall(r"[\w/]+\.ajax", page.text)))
-        logger.info("[DEBUG] 페이지 내 .ajax 호출: %s", ajax_calls)
-        idx = page.text.find("orginlInfoList.ajax")
-        if idx >= 0:
-            logger.info("[DEBUG] ajax 호출 주변 JS: %s",
-                        page.text[max(0, idx - 1200):idx + 400].replace("\n", " "))
-        idx2 = page.text.find("function searchCallFn")
-        if idx2 >= 0:
-            logger.info("[DEBUG] searchCallFn 정의: %s",
-                        page.text[idx2:idx2 + 1200].replace("\n", " "))
+        # 본문 안의 orginlInfoList.ajax 호출부를 전부(주변 코드 포함) 출력
+        for n, m2 in enumerate(re.finditer(r"orginlInfoList\.ajax", page.text)):
+            snippet = page.text[max(0, m2.start() - 1000):m2.start() + 300]
+            logger.info("[DEBUG] 본문 ajax 호출부 #%d:\n%s", n + 1, snippet)
+        # 검색 로직이 외부 JS에 있을 수 있어 관련 JS 파일도 뒤져본다.
+        scripts = [s.get("src") for s in page_soup.find_all("script") if s.get("src")]
+        related = [s for s in scripts
+                   if any(t in s for t in ("orginl", "infoList", "othic", "search", "cmmn", "common"))]
+        logger.info("[DEBUG] 외부 JS %d개 중 관련 후보 %d개: %s", len(scripts), len(related), related)
+        for src in related[:8]:
+            full = src if src.startswith("http") else "https://www.open.go.kr" + src
+            try:
+                js = session.get(full, headers={"User-Agent": USER_AGENT}, timeout=(15, 30)).text
+            except Exception as e:
+                logger.info("[DEBUG] JS 받기 실패 %s: %s", full, e)
+                continue
+            i = js.find("orginlInfoList.ajax")
+            if i >= 0:
+                logger.info("[DEBUG] %s 의 ajax 호출부:\n%s", full, js[max(0, i - 2500):i + 800])
     headers = {
         "User-Agent": USER_AGENT,
         "Referer": OPEN_PORTAL_PAGE,
