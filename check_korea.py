@@ -199,6 +199,16 @@ def collect_open_portal():
     # 검색 화면을 먼저 열어 세션 쿠키를 받는다.
     page = session.get(OPEN_PORTAL_PAGE, headers={"User-Agent": USER_AGENT}, timeout=(15, 40))
     page.raise_for_status()
+    if DEBUG:
+        # 검색 폼의 실제 파라미터 이름을 확인(파라미터 불일치 오류 대응)
+        page_soup = BeautifulSoup(page.text, "html.parser")
+        names = sorted({
+            el.get("name") for el in page_soup.find_all(["input", "select", "textarea"])
+            if el.get("name")
+        })
+        logger.info("[DEBUG] 원문정보 페이지 폼 필드(%d개): %s", len(names), names)
+        ajax_calls = sorted(set(re.findall(r"[\w/]+\.ajax", page.text)))
+        logger.info("[DEBUG] 페이지 내 .ajax 호출: %s", ajax_calls)
     headers = {
         "User-Agent": USER_AGENT,
         "Referer": OPEN_PORTAL_PAGE,
@@ -240,6 +250,12 @@ def collect_open_portal():
             logger.info("[DEBUG] 정보공개포털 응답 최상위 키: %s / result 키: %s",
                         list(data.keys()), list(result.keys()) if isinstance(result, dict) else type(result))
         if str(result.get("code")) != "200":
+            if DEBUG:
+                # 서버가 기대하는 파라미터 이름이 parameterVO/paramJson에 들어있다
+                logger.info("[DEBUG] parameterVO: %s",
+                            json.dumps(data.get("parameterVO") or result.get("parameterVO") or {},
+                                       ensure_ascii=False)[:1500])
+                logger.info("[DEBUG] paramJson: %s", str(data.get("paramJson"))[:800])
             raise RuntimeError(
                 f"정보공개포털 API 오류({keyword}): {result.get('code')} "
                 f"{result.get('message') or result.get('rtnMsg') or ''}"
