@@ -65,7 +65,7 @@
 송파구 | https://www.songpa.go.kr/www/sub.do?key=2776 | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지,모아타운,도심복합
 양천구 | https://www.yangcheon.go.kr/site/yangcheon/ex/seol/seolCollectList.do | 재개발,재건축,신속통합,신통,정비,동의서,번호부여,후보지,모아타운,도심복합
 
-# ── 정보공개포털(open.go.kr) 기관장 결재문서 공식 AJAX 검색 ──
-# 검색 API가 첨부 본문도 찾으므로 check_boards.py가 제목을 재검사하고,
-# 서울시 본청 및 아래 14개 자치구 결과만 허용한다.
-정보공개포털 서울 결재문서 | https://www.open.go.kr/othicInfo/infoList/mnstrSanDocList.do | 재개발,재건축,신속통합,모아타운,도심복합,정비계획,정비구역,정비사업,후보지,동의서 | 강남구,강동구,광진구,동대문구,동작구,마포구,서대문구,서초구,성동구,송파구,영등포구,용산구,종로구,중구
+# ── 정보공개포털(open.go.kr) — 제거됨 (2026-07-17) ──
+# 기관장 결재문서 검색(mnstrSanDocList)에는 서울 문서가 없어 항상 0건이었고
+# 해외 IP에서 타임아웃도 잦았다. 서울시·자치구 결재문서는 집 노트북의
+# check_korea.py가 서울정보소통광장(opengov) 서버 검색으로 전부 커버한다.

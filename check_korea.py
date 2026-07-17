@@ -2,8 +2,12 @@
 
 GitHub Actions(해외 IP)에서 차단·불안정한 한국 정부사이트를 '한국 IP에서 직접'
 접속해 감시한다. 현재 대상:
-1) 서울정보소통광장(opengov.seoul.go.kr) 결재문서 실시간 — 서울시 본청·사업소
-2) 정보공개포털(open.go.kr) 기관장 결재문서 — 서울시 본청 + 감시 대상 14개 자치구
+- 서울정보소통광장(opengov.seoul.go.kr) 결재문서 — 서버 키워드 검색으로
+  서울시 본청 + 사업소 + 25개 자치구 결재문서를 모두 커버한다.
+
+정보공개포털(open.go.kr)은 서울 문서에 한해 opengov와 동일 내용의 중복 창구라
+연동하지 않는다(2026-07-17 확인: orginlInfoList.ajax는 브라우저 외 요청을 491로
+거부하며, opengov 검색 결과에 자치구 문서까지 포함됨을 확인).
 
 GitHub Actions 쪽 스크립트들과 역할이 겹치지 않게 분리돼 있다:
 - 상태(확인한 문서)는 이 서버 로컬 파일(seen_korea.json)에만 저장한다. git에 커밋하지
@@ -24,8 +28,6 @@ import json
 import logging
 import os
 import re
-from datetime import date, timedelta
-from urllib.parse import urlencode
 
 import requests
 from bs4 import BeautifulSoup
@@ -62,22 +64,6 @@ KEYWORDS = [
 # 상세문서 링크 형식: https://opengov.seoul.go.kr/sanction/{숫자}
 SANCTION_RE = re.compile(r"/sanction/(\d+)")
 DATE_RE = re.compile(r"\d{4}[-.]\d{1,2}[-.]\d{1,2}")
-
-# ── 정보공개포털(open.go.kr) 원문정보 검색 ──
-# GitHub Actions(해외 IP)에서는 2/3 확률로 타임아웃 나던 사이트라 한국 IP에서 돌린다.
-# '기관장 결재문서'(mnstrSanDocList)에는 서울 문서가 없어서, 서울시·자치구 문서가
-# 실제로 올라오는 '원문정보' 목록(orginlInfoList)을 검색한다.
-# seen_korea.json 안에서 opengov 문서번호와 구분하기 위해 접두사를 붙인다.
-OPEN_PORTAL_PAGE = "https://www.open.go.kr/othicInfo/infoList/orginlInfoList.do"
-OPEN_PORTAL_AJAX = "https://www.open.go.kr/othicInfo/infoList/orginlInfoList.ajax"
-OPEN_PREFIX = "open:"
-OPEN_PORTAL_DAYS = 30  # 최근 30일 문서만 검색(중복은 seen 파일로 걸러짐)
-
-# 감시 대상 14개 자치구 (서울시 본청은 항상 포함)
-TARGET_GU = (
-    "강남구", "강동구", "광진구", "동대문구", "동작구", "마포구", "서대문구",
-    "서초구", "성동구", "송파구", "영등포구", "용산구", "종로구", "중구",
-)
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -216,164 +202,6 @@ def matches(item):
     return any(k in item["title"] for k in KEYWORDS)
 
 
-def collect_open_portal():
-    """정보공개포털에서 키워드별로 기관장 결재문서를 검색해 서울 기관 것만 반환.
-
-    검색 API는 첨부 본문까지 찾으므로 제목에 키워드가 실제로 있는지 재검사하고,
-    기관명이 서울시 본청 또는 감시 대상 자치구인 것만 통과시킨다.
-    """
-    today = date.today()
-    start = today - timedelta(days=OPEN_PORTAL_DAYS)
-    session = requests.Session()
-    # 검색 화면을 먼저 열어 세션 쿠키를 받는다.
-    page = session.get(OPEN_PORTAL_PAGE, headers={"User-Agent": USER_AGENT}, timeout=(15, 40))
-    page.raise_for_status()
-    # 페이지 폼의 기본 필드(숨은 토큰 포함)를 그대로 싣고, 검색 조건만 덮어쓴다.
-    page_soup = BeautifulSoup(page.text, "html.parser")
-    base_payload = {}
-    for el in page_soup.find_all(["input", "select"]):
-        name = el.get("name")
-        if not name:
-            continue
-        if el.name == "select":
-            opt = el.find("option", selected=True) or el.find("option")
-            base_payload.setdefault(name, (opt.get("value") or "") if opt else "")
-        else:
-            base_payload.setdefault(name, el.get("value") or "")
-
-    # 기관유형(insttSeCd) 체크박스: 사이트 JS가 체크된 값들을 콤마로 합쳐 보낸다.
-    # 빈값이면 서버가 491(파라미터 오류)을 내는 것으로 보여, 전체 유형을 선택해 보낸다.
-    instt_vals = [el.get("value") for el in page_soup.find_all("input", attrs={"name": "insttSeCd"})
-                  if el.get("value")]
-    if instt_vals:
-        base_payload["insttSeCd"] = ",".join(dict.fromkeys(instt_vals))
-
-    if DEBUG:
-        logger.info("[DEBUG] insttSeCd 체크박스 값: %s", instt_vals)
-        # 전송 방식(폼/JSON) 확인용 — 실제 사이트의 util_ajax 정의를 덤프
-        try:
-            js = session.get("https://www.open.go.kr/js/ops-common.js",
-                             headers={"User-Agent": USER_AGENT}, timeout=(15, 30)).text
-            i = js.find("util_ajax")
-            if i >= 0:
-                logger.info("[DEBUG] util_ajax 정의:\n%s", js[i:i + 1200])
-        except Exception as e:
-            logger.info("[DEBUG] ops-common.js 받기 실패: %s", e)
-    headers = {
-        "User-Agent": USER_AGENT,
-        "Referer": OPEN_PORTAL_PAGE,
-        "X-Requested-With": "XMLHttpRequest",
-    }
-
-    working_mode = []  # 성공한 전송 방식을 기억해 다음 키워드부터 바로 사용
-
-    def search_once(keyword):
-        # 사이트 JS(searchFn)의 param 객체와 동일한 구성
-        js_param = {
-            "kwd": keyword,
-            "searchInsttCdNmPop": "",
-            "preKwds": keyword,
-            "reSrchFlag": "off",
-            "othbcSeCd": base_payload.get("othbcSeCd", ""),
-            "insttSeCd": base_payload.get("insttSeCd", ""),
-            "eduYn": "N",
-            "startDate": start.strftime("%Y%m%d"),
-            "endDate": today.strftime("%Y%m%d"),
-            "insttCdNm": "",
-            "insttCd": "",
-            "searchMainYn": "",
-            "viewPage": 1,
-            "rowPage": "100",
-            "sort": "s",
-        }
-        full_form = dict(base_payload)
-        full_form.update({k: str(v) for k, v in js_param.items()})
-        # form-min: 사이트 JS param만 폼 전송 / json: JSON 본문 / form-full: 폼 기본값 포함
-        modes = list(working_mode) or ["form-min", "json", "form-full"]
-        last_code = None
-        for mode in modes:
-            if mode == "json":
-                resp = session.post(OPEN_PORTAL_AJAX, json=js_param, headers=headers, timeout=(15, 50))
-            elif mode == "form-full":
-                resp = session.post(OPEN_PORTAL_AJAX, data=full_form, headers=headers, timeout=(15, 50))
-            else:
-                resp = session.post(OPEN_PORTAL_AJAX, data=js_param, headers=headers, timeout=(15, 50))
-            resp.raise_for_status()
-            try:
-                data = resp.json()
-            except ValueError:
-                if DEBUG:
-                    logger.info("[DEBUG] 정보공개포털 %s 방식 JSON 아님, 본문: %s", mode, resp.text[:300])
-                last_code = "non-json"
-                continue
-            result = data.get("result") or data
-            last_code = str(result.get("code"))
-            if DEBUG:
-                logger.info("[DEBUG] 정보공개포털 '%s' %s 방식 → 코드 %s", keyword, mode, last_code)
-            if last_code == "200":
-                if not working_mode:
-                    working_mode.append(mode)
-                    logger.info("정보공개포털 전송 방식 확정: %s", mode)
-                return result
-        raise RuntimeError(f"정보공개포털 API 오류({keyword}): 모든 전송 방식 실패(마지막 코드 {last_code})")
-
-    items_by_id = {}
-    searched_rows = 0
-    sample_agencies = {}
-    for keyword in KEYWORDS:
-        result = search_once(keyword)
-        rows = result.get("rtnList") or []
-        if DEBUG and rows and keyword == KEYWORDS[0]:
-            first = {k: str(v)[:60] for k, v in rows[0].items()}
-            logger.info("[DEBUG] 정보공개포털 첫 행 필드: %s", first)
-        searched_rows += len(rows)
-        for row in rows:
-            title = str(row.get("INFO_SJ") or "").strip()
-            if not title or keyword not in title:
-                continue
-
-            agency = str(row.get("PROC_INSTT_NM") or "").strip()
-            department = str(row.get("NFLST_CHRG_DEPT_NM") or "").strip()
-            sample_agencies[agency] = sample_agencies.get(agency, 0) + 1
-            is_seoul = agency == "서울특별시" or any(
-                agency == f"서울특별시 {gu}" or f"서울특별시 {gu}" in department
-                for gu in TARGET_GU
-            )
-            if not is_seoul:
-                continue
-
-            doc_id = str(row.get("PRDCTN_INSTT_REGIST_NO") or "").strip()
-            produced = str(row.get("PRDCTN_DT") or "").strip()
-            inst_type = str(row.get("INSTT_SE_CD") or "").strip()
-            if not doc_id:
-                continue
-            query = urlencode({
-                "prdnNstRgstNo": doc_id,
-                "prdnDt": produced,
-                "nstSeCd": inst_type,
-                "title": "기관장결재문서",
-            })
-            date_value = ""
-            if len(produced) >= 8 and produced[:8].isdigit():
-                date_value = f"{produced[:4]}-{produced[4:6]}-{produced[6:8]}"
-            items_by_id[doc_id] = {
-                "id": OPEN_PREFIX + doc_id,
-                "title": title,
-                "agency": agency,
-                "date": date_value,
-                "link": "https://www.open.go.kr/othicInfo/infoList/infoListDetl3.do?" + query,
-            }
-
-    items = sorted(items_by_id.values(), key=lambda x: x["date"])
-    logger.info("정보공개포털: 검색 행 %d개, 제목·서울기관 통과 %d건", searched_rows, len(items))
-    if DEBUG:
-        top = sorted(sample_agencies.items(), key=lambda kv: -kv[1])[:15]
-        logger.info("[DEBUG] 정보공개포털 제목매칭 기관 분포: %s", top)
-        for x in items[:15]:
-            logger.info("[DEBUG]★ %s [%s|%s] %s", x["id"], x["date"], x["agency"], x["title"][:60])
-    return items
-
-
 def load_seen():
     if not os.path.exists(SEEN_FILE):
         return None
@@ -390,18 +218,16 @@ def save_seen(ids):
         f.write("\n")
 
 
-def format_alert(x, source):
+def format_alert(x):
     date_part = f" ({x['date']})" if x["date"] else ""
     agency_part = f"[{x['agency']}] " if x.get("agency") else ""
-    emoji = "🏛️" if source == "opengov" else "📄"
-    label = "결재문서" if source == "opengov" else "결재문서(정보공개포털)"
-    return f"{emoji} {agency_part}{label}{date_part}\n{x['title']}\n{x['link']}"
+    return f"🏛️ {agency_part}결재문서{date_part}\n{x['title']}\n{x['link']}"
 
 
 def main():
     session = requests.Session()
 
-    # 1) 서울정보소통광장(opengov) 결재문서 — 서버 검색 우선, 실패시 목록 스캔 폴백
+    # 서울정보소통광장(opengov) 결재문서 — 서버 검색 우선, 실패시 목록 스캔 폴백
     items = collect_by_search(session)
     if items is None:
         logger.info("opengov 서버 검색 실패 → 전체 목록 스캔으로 폴백")
@@ -411,13 +237,6 @@ def main():
         key=lambda x: x["date"],
     )
     logger.info("결재문서 링크 %d개, 재개발 키워드 통과 %d개", len(items), len(matched))
-
-    # 2) 정보공개포털(open.go.kr) 기관장 결재문서 — 실패해도 opengov 감시는 계속
-    try:
-        portal_items = collect_open_portal()
-    except Exception as e:
-        logger.warning("정보공개포털 조회 실패(이번 회차 건너뜀): %s", e)
-        portal_items = []
 
     if DEBUG:
         for x in items[:15]:
@@ -434,13 +253,13 @@ def main():
     seen = load_seen()
     if seen is None:
         # 첫 실행: 현재 매칭 문서를 알림 없이 기준선으로 저장
-        save_seen([SEARCH_MARKER] + [x["id"] for x in matched] + [x["id"] for x in portal_items])
+        save_seen([SEARCH_MARKER] + [x["id"] for x in matched])
         send_message(
             token, chat_id,
             "🏛️ [서울정보소통광장] 결재문서 실시간 감시를 시작했습니다. "
             "재개발·신속통합·모아타운·도심복합 등 관련 결재문서가 올라오면 알려드릴게요.",
         )
-        logger.info("첫 실행: 기준선 %d개 저장", len(matched) + len(portal_items))
+        logger.info("첫 실행: 기준선 %d개 저장", len(matched))
         return
 
     known = set(seen)
@@ -456,25 +275,11 @@ def main():
         save_seen(saved + [SEARCH_MARKER])
         logger.info("opengov 검색 전환 기준선: %d건 알림 없이 흡수", len(absorbed))
 
-    # 정보공개포털을 처음 켜는 회차: 알림 없이 기준선만 추가 저장
-    portal_first = portal_items and not any(s.startswith(OPEN_PREFIX) for s in known)
-    if portal_first:
-        saved.extend(x["id"] for x in portal_items)
-        save_seen(saved + [SEARCH_MARKER])
-        send_message(
-            token, chat_id,
-            "📄 [정보공개포털] 서울시·자치구 결재문서 감시를 노트북에서 시작했습니다. "
-            "같은 키워드(재개발·신속통합·모아타운·도심복합 등)로 새 문서가 올라오면 알려드릴게요.",
-        )
-        logger.info("정보공개포털 첫 회차: 기준선 %d개 저장", len(portal_items))
-        known = set(saved)
-
-    # 오래된 것부터 발송 (둘 다 날짜 오름차순 정렬됨)
-    to_send = [(x, "opengov") for x in matched if x["id"] not in known]
-    to_send += [(x, "portal") for x in portal_items if x["id"] not in known]
+    # 오래된 것부터 발송 (날짜 오름차순 정렬됨)
+    to_send = [x for x in matched if x["id"] not in known]
     try:
-        for x, source in to_send:
-            send_message(token, chat_id, format_alert(x, source), disable_preview=True)
+        for x in to_send:
+            send_message(token, chat_id, format_alert(x), disable_preview=True)
             saved.append(x["id"])
             logger.info("알림: %s", x["title"][:60])
     finally:
