@@ -60,11 +60,13 @@ KEYWORDS = [
 SANCTION_RE = re.compile(r"/sanction/(\d+)")
 DATE_RE = re.compile(r"\d{4}[-.]\d{1,2}[-.]\d{1,2}")
 
-# ── 정보공개포털(open.go.kr) 기관장 결재문서 검색 ──
+# ── 정보공개포털(open.go.kr) 원문정보 검색 ──
 # GitHub Actions(해외 IP)에서는 2/3 확률로 타임아웃 나던 사이트라 한국 IP에서 돌린다.
+# '기관장 결재문서'(mnstrSanDocList)에는 서울 문서가 없어서, 서울시·자치구 문서가
+# 실제로 올라오는 '원문정보' 목록(orginlInfoList)을 검색한다.
 # seen_korea.json 안에서 opengov 문서번호와 구분하기 위해 접두사를 붙인다.
-OPEN_PORTAL_PAGE = "https://www.open.go.kr/othicInfo/infoList/mnstrSanDocList.do"
-OPEN_PORTAL_AJAX = "https://www.open.go.kr/othicInfo/infoList/mnstrSanDocList.ajax"
+OPEN_PORTAL_PAGE = "https://www.open.go.kr/othicInfo/infoList/orginlInfoList.do"
+OPEN_PORTAL_AJAX = "https://www.open.go.kr/othicInfo/infoList/orginlInfoList.ajax"
 OPEN_PREFIX = "open:"
 OPEN_PORTAL_DAYS = 30  # 최근 30일 문서만 검색(중복은 seen 파일로 걸러짐)
 
@@ -226,14 +228,26 @@ def collect_open_portal():
         }
         response = session.post(OPEN_PORTAL_AJAX, data=payload, headers=headers, timeout=(15, 50))
         response.raise_for_status()
-        data = response.json()
+        try:
+            data = response.json()
+        except ValueError:
+            if DEBUG:
+                logger.info("[DEBUG] 정보공개포털(%s) JSON 아님, 본문 앞부분: %s",
+                            keyword, response.text[:500])
+            raise RuntimeError(f"정보공개포털 응답이 JSON이 아님({keyword})")
         result = data.get("result") or data
+        if DEBUG and keyword == KEYWORDS[0]:
+            logger.info("[DEBUG] 정보공개포털 응답 최상위 키: %s / result 키: %s",
+                        list(data.keys()), list(result.keys()) if isinstance(result, dict) else type(result))
         if str(result.get("code")) != "200":
             raise RuntimeError(
                 f"정보공개포털 API 오류({keyword}): {result.get('code')} "
                 f"{result.get('message') or result.get('rtnMsg') or ''}"
             )
         rows = result.get("rtnList") or []
+        if DEBUG and rows and keyword == KEYWORDS[0]:
+            first = {k: str(v)[:60] for k, v in rows[0].items()}
+            logger.info("[DEBUG] 정보공개포털 첫 행 필드: %s", first)
         searched_rows += len(rows)
         for row in rows:
             title = str(row.get("INFO_SJ") or "").strip()
