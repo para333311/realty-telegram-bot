@@ -97,13 +97,17 @@ def fetch_page(session, page):
         date_m = DATE_RE.search(row_text)
         date_val = date_m.group(0).replace(".", "-") if date_m else ""
         seen_ids.add(doc_id)
-        items.append({
+        item = {
             "id": doc_id,
             "title": title,
             "date": date_val,
             "link": f"{BASE}/sanction/{doc_id}",
             "row_text": row_text[:200],
-        })
+        }
+        if DEBUG:
+            # [DEBUG] 실제 행 HTML 구조를 그대로 남긴다(날짜/제목 파싱 정밀 튜닝용).
+            item["raw_html"] = str(row)[:700] if row else str(a)[:700]
+        items.append(item)
     return items
 
 
@@ -155,6 +159,9 @@ def main():
             hit = "★" if matches(x) else " "
             logger.info("[DEBUG]%s id=%s [%s] %s", hit, x["id"], x["date"], x["title"][:60])
         logger.info("[DEBUG] 첫 행 원본텍스트 예: %s", items[0]["row_text"] if items else "(없음)")
+        # [DEBUG] 날짜/제목 파싱 정밀 튜닝을 위해 실제 행 HTML을 그대로 보여준다.
+        for i, x in enumerate(items[:3]):
+            logger.info("[DEBUG] 행%d 원본HTML: %s", i + 1, x.get("raw_html", ""))
         logger.info("[DEBUG] 디버그 모드: 알림/저장 생략")
         return
 
