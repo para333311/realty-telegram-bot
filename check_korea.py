@@ -97,6 +97,16 @@ def fetch_page(session, page):
 
     if DEBUG and page == 1:
         logger.info("[DEBUG] HTTP %s, 본문 %d바이트", r.status_code, len(r.text))
+        # 목록 자체에 검색어(키워드) 파라미터가 있는지 확인 — 있으면 서버단에서
+        # 바로 필터링해 전체물량(소방서·병원 등)을 안 가져와도 되게 개선 가능.
+        forms = soup.find_all("form")
+        logger.info("[DEBUG] 폼 %d개", len(forms))
+        for i, f in enumerate(forms):
+            names = [el.get("name") for el in f.find_all(["input", "select", "textarea"]) if el.get("name")]
+            if names:
+                logger.info("[DEBUG] 폼#%d action=%s 필드: %s", i, f.get("action"), names)
+        srch_hits = sorted(set(re.findall(r"[a-zA-Z_][a-zA-Z0-9_]*(?:srch|Srch|keyword|Keyword|kwd|Kwd)[a-zA-Z0-9_]*", r.text)))
+        logger.info("[DEBUG] 검색관련 이름 후보: %s", srch_hits)
 
     items = []
     seen_ids = set()
