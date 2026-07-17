@@ -46,6 +46,9 @@ BASE = "https://opengov.seoul.go.kr"
 LIST_URL = BASE + "/sanction/list"
 SEEN_FILE = "seen_korea.json"
 SEEN_KEEP = 3000
+# 수집 방식이 '전체 목록 스캔' → '서버 키워드 검색'으로 바뀐 뒤 첫 회차에
+# 검색이 새로 찾아낸 과거 문서들이 한꺼번에 알림되는 것을 막는 표식.
+SEARCH_MARKER = "opengov-search-v1"
 FETCH_PAGES = 5  # 30분마다 도니 최근 몇 페이지만 훑어도 새 문서를 놓치지 않는다
 DEBUG = os.environ.get("DEBUG", "").strip() not in ("", "0", "false", "False")
 
@@ -246,75 +249,79 @@ def collect_open_portal():
         base_payload["insttSeCd"] = ",".join(dict.fromkeys(instt_vals))
 
     if DEBUG:
-        logger.info("[DEBUG] 원문정보 페이지 폼 필드(%d개): %s",
-                    len(base_payload), json.dumps(base_payload, ensure_ascii=False)[:1200])
         logger.info("[DEBUG] insttSeCd 체크박스 값: %s", instt_vals)
-        # searchFn이 param을 어떻게 채워 보내는지 — url 문자열 뒤쪽 코드가 핵심
-        m2 = re.search(r"orginlInfoList\.ajax", page.text)
-        if m2:
-            logger.info("[DEBUG] 본문 ajax 호출부(뒤쪽 확장):\n%s",
-                        page.text[max(0, m2.start() - 100):m2.start() + 2800])
-        # 검색 로직이 외부 JS에 있을 수 있어 관련 JS 파일도 뒤져본다.
-        scripts = [s.get("src") for s in page_soup.find_all("script") if s.get("src")]
-        related = [s for s in scripts
-                   if any(t in s for t in ("orginl", "infoList", "othic", "search", "cmmn", "common"))]
-        logger.info("[DEBUG] 외부 JS %d개 중 관련 후보 %d개: %s", len(scripts), len(related), related)
-        for src in related[:8]:
-            full = src if src.startswith("http") else "https://www.open.go.kr" + src
-            try:
-                js = session.get(full, headers={"User-Agent": USER_AGENT}, timeout=(15, 30)).text
-            except Exception as e:
-                logger.info("[DEBUG] JS 받기 실패 %s: %s", full, e)
-                continue
-            i = js.find("orginlInfoList.ajax")
+        # 전송 방식(폼/JSON) 확인용 — 실제 사이트의 util_ajax 정의를 덤프
+        try:
+            js = session.get("https://www.open.go.kr/js/ops-common.js",
+                             headers={"User-Agent": USER_AGENT}, timeout=(15, 30)).text
+            i = js.find("util_ajax")
             if i >= 0:
-                logger.info("[DEBUG] %s 의 ajax 호출부:\n%s", full, js[max(0, i - 2500):i + 800])
+                logger.info("[DEBUG] util_ajax 정의:\n%s", js[i:i + 1200])
+        except Exception as e:
+            logger.info("[DEBUG] ops-common.js 받기 실패: %s", e)
     headers = {
         "User-Agent": USER_AGENT,
         "Referer": OPEN_PORTAL_PAGE,
         "X-Requested-With": "XMLHttpRequest",
     }
 
+    working_mode = []  # 성공한 전송 방식을 기억해 다음 키워드부터 바로 사용
+
+    def search_once(keyword):
+        # 사이트 JS(searchFn)의 param 객체와 동일한 구성
+        js_param = {
+            "kwd": keyword,
+            "searchInsttCdNmPop": "",
+            "preKwds": keyword,
+            "reSrchFlag": "off",
+            "othbcSeCd": base_payload.get("othbcSeCd", ""),
+            "insttSeCd": base_payload.get("insttSeCd", ""),
+            "eduYn": "N",
+            "startDate": start.strftime("%Y%m%d"),
+            "endDate": today.strftime("%Y%m%d"),
+            "insttCdNm": "",
+            "insttCd": "",
+            "searchMainYn": "",
+            "viewPage": 1,
+            "rowPage": "100",
+            "sort": "s",
+        }
+        full_form = dict(base_payload)
+        full_form.update({k: str(v) for k, v in js_param.items()})
+        # form-min: 사이트 JS param만 폼 전송 / json: JSON 본문 / form-full: 폼 기본값 포함
+        modes = list(working_mode) or ["form-min", "json", "form-full"]
+        last_code = None
+        for mode in modes:
+            if mode == "json":
+                resp = session.post(OPEN_PORTAL_AJAX, json=js_param, headers=headers, timeout=(15, 50))
+            elif mode == "form-full":
+                resp = session.post(OPEN_PORTAL_AJAX, data=full_form, headers=headers, timeout=(15, 50))
+            else:
+                resp = session.post(OPEN_PORTAL_AJAX, data=js_param, headers=headers, timeout=(15, 50))
+            resp.raise_for_status()
+            try:
+                data = resp.json()
+            except ValueError:
+                if DEBUG:
+                    logger.info("[DEBUG] 정보공개포털 %s 방식 JSON 아님, 본문: %s", mode, resp.text[:300])
+                last_code = "non-json"
+                continue
+            result = data.get("result") or data
+            last_code = str(result.get("code"))
+            if DEBUG:
+                logger.info("[DEBUG] 정보공개포털 '%s' %s 방식 → 코드 %s", keyword, mode, last_code)
+            if last_code == "200":
+                if not working_mode:
+                    working_mode.append(mode)
+                    logger.info("정보공개포털 전송 방식 확정: %s", mode)
+                return result
+        raise RuntimeError(f"정보공개포털 API 오류({keyword}): 모든 전송 방식 실패(마지막 코드 {last_code})")
+
     items_by_id = {}
     searched_rows = 0
     sample_agencies = {}
     for keyword in KEYWORDS:
-        payload = dict(base_payload)
-        payload.update({
-            "kwd": keyword,
-            "preKwds": keyword,
-            "reSrchFlag": "off",
-            "eduYn": "N",
-            "startDate": start.strftime("%Y%m%d"),
-            "endDate": today.strftime("%Y%m%d"),
-            "viewPage": "1",
-            "rowPage": "100",
-            "sort": "s",
-        })
-        response = session.post(OPEN_PORTAL_AJAX, data=payload, headers=headers, timeout=(15, 50))
-        response.raise_for_status()
-        try:
-            data = response.json()
-        except ValueError:
-            if DEBUG:
-                logger.info("[DEBUG] 정보공개포털(%s) JSON 아님, 본문 앞부분: %s",
-                            keyword, response.text[:500])
-            raise RuntimeError(f"정보공개포털 응답이 JSON이 아님({keyword})")
-        result = data.get("result") or data
-        if DEBUG and keyword == KEYWORDS[0]:
-            logger.info("[DEBUG] 정보공개포털 응답 최상위 키: %s / result 키: %s",
-                        list(data.keys()), list(result.keys()) if isinstance(result, dict) else type(result))
-        if str(result.get("code")) != "200":
-            if DEBUG:
-                # 서버가 기대하는 파라미터 이름이 parameterVO/paramJson에 들어있다
-                logger.info("[DEBUG] parameterVO: %s",
-                            json.dumps(data.get("parameterVO") or result.get("parameterVO") or {},
-                                       ensure_ascii=False)[:1500])
-                logger.info("[DEBUG] paramJson: %s", str(data.get("paramJson"))[:800])
-            raise RuntimeError(
-                f"정보공개포털 API 오류({keyword}): {result.get('code')} "
-                f"{result.get('message') or result.get('rtnMsg') or ''}"
-            )
+        result = search_once(keyword)
         rows = result.get("rtnList") or []
         if DEBUG and rows and keyword == KEYWORDS[0]:
             first = {k: str(v)[:60] for k, v in rows[0].items()}
@@ -427,7 +434,7 @@ def main():
     seen = load_seen()
     if seen is None:
         # 첫 실행: 현재 매칭 문서를 알림 없이 기준선으로 저장
-        save_seen([x["id"] for x in matched] + [x["id"] for x in portal_items])
+        save_seen([SEARCH_MARKER] + [x["id"] for x in matched] + [x["id"] for x in portal_items])
         send_message(
             token, chat_id,
             "🏛️ [서울정보소통광장] 결재문서 실시간 감시를 시작했습니다. "
@@ -437,13 +444,23 @@ def main():
         return
 
     known = set(seen)
-    saved = list(seen)
+    # 표식은 항상 목록 끝에 다시 넣어 오래돼도 잘려나가지 않게 한다
+    saved = [s for s in seen if s != SEARCH_MARKER]
+
+    if SEARCH_MARKER not in known:
+        # 목록 스캔 → 서버 검색 전환 후 첫 회차: 검색이 새로 찾아낸 과거 문서들을
+        # 알림 없이 기준선에 흡수한다(전환 직후 수십 건 알림 폭탄 방지).
+        absorbed = [x["id"] for x in matched if x["id"] not in known]
+        saved.extend(absorbed)
+        known.update(absorbed)
+        save_seen(saved + [SEARCH_MARKER])
+        logger.info("opengov 검색 전환 기준선: %d건 알림 없이 흡수", len(absorbed))
 
     # 정보공개포털을 처음 켜는 회차: 알림 없이 기준선만 추가 저장
     portal_first = portal_items and not any(s.startswith(OPEN_PREFIX) for s in known)
     if portal_first:
         saved.extend(x["id"] for x in portal_items)
-        save_seen(saved)
+        save_seen(saved + [SEARCH_MARKER])
         send_message(
             token, chat_id,
             "📄 [정보공개포털] 서울시·자치구 결재문서 감시를 노트북에서 시작했습니다. "
@@ -461,7 +478,7 @@ def main():
             saved.append(x["id"])
             logger.info("알림: %s", x["title"][:60])
     finally:
-        save_seen(saved)
+        save_seen(saved + [SEARCH_MARKER])
 
 
 if __name__ == "__main__":
