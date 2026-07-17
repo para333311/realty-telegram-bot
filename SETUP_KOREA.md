@@ -90,3 +90,72 @@ crontab -e
 ## 참고: 나중에 확장
 opengov가 잘 되면, 같은 서버에서 만성 타임아웃 구청(동대문·광진·양천)이나
 open.go.kr도 한국 IP로 돌려 안정화할 수 있습니다. opengov부터 검증 후 확장합니다.
+
+---
+
+## 방법 2: 집 PC(윈도우)에서 상시 실행 — 오라클 대신 이걸 쓸 때
+
+오라클 무료 리전이 한국은 자리가 없는 경우가 흔합니다. 집 PC(윈도우)가 항상 켜져
+있다면 이게 더 간단하고 확실합니다(가입 절차 없음, 확실한 한국 IP).
+
+### 1) Python 설치 확인
+PowerShell 열고:
+```powershell
+python --version
+```
+버전이 안 뜨면 https://www.python.org/downloads/ 에서 설치.
+**설치 화면에서 "Add python.exe to PATH" 체크 필수.**
+
+### 2) Git 설치 (코드 받기 + 나중에 업데이트용)
+https://git-scm.com/download/win 다운로드 → 설치(전부 기본값으로 Next).
+
+### 3) 코드 받기
+PowerShell에서:
+```powershell
+cd $HOME\Documents
+git clone https://github.com/para333311/realty-telegram-bot.git
+cd realty-telegram-bot
+pip install requests beautifulsoup4 python-dotenv
+```
+
+### 4) 텔레그램 시크릿 파일 생성
+`realty-telegram-bot` 폴더에 `.env` 파일을 메모장으로 새로 만들고 아래 내용 저장
+(GitHub Secrets와 같은 값 — 잊었으면 BotFather에서 토큰, @userinfobot에서 채팅ID 재확인):
+```
+BOARD_BOT_TOKEN=여기에_재재보드봇_토큰
+TELEGRAM_CHAT_ID=여기에_채팅ID
+```
+
+### 5) 디버그로 먼저 확인 (중요)
+```powershell
+$env:DEBUG="1"; python check_korea.py
+```
+`HTTP 200`과 문서 목록이 출력되면 성공. 출력을 클로드에게 붙여주면 파싱 튜닝.
+`HTTP 403`이나 0건이면 opengov가 가정용 IP도 막는 것 — 그 결과도 알려주세요.
+
+### 6) 정상 확인되면 실제 1회 실행
+```powershell
+python check_korea.py
+```
+(첫 실행은 "감시 시작" 안내만 오고 기준선 저장)
+
+### 7) 작업 스케줄러로 30분마다 자동 실행
+1. 시작 메뉴 → **"작업 스케줄러"(Task Scheduler)** 검색해서 열기
+2. 오른쪽 **"작업 만들기"** 클릭
+3. **일반** 탭: 이름 `korea-monitor` 입력, **"가장 높은 권한으로 실행"** 체크
+4. **트리거** 탭 → 새로 만들기 → 매일, 반복 간격 **30분**, 기간 **무기한**
+5. **동작** 탭 → 새로 만들기 →
+   - 프로그램/스크립트: `python` (또는 `python --version`으로 나온 전체경로, 예: `C:\Users\사용자\AppData\Local\Programs\Python\Python312\python.exe`)
+   - 인수 추가: `check_korea.py`
+   - 시작 위치: `C:\Users\사용자\Documents\realty-telegram-bot` (본인 경로로)
+6. **조건** 탭 → **"AC 전원에 연결된 경우에만 시작"** 체크 해제(배터리로도 돌게), 필요시 조정
+7. 확인 → 저장
+
+### 8) 노트북이 잠들지 않게 (중요!)
+- **설정 → 시스템 → 전원 및 절전** → "화면 끄기"는 괜찮지만 **"절전 모드"는 "안 함"으로 설정**
+  (절전 들어가면 예약 작업이 안 돕니다. 화면만 꺼지는 건 무관.)
+- 노트북 덮개(뚜껑)를 닫아도 계속 돌게 하려면:
+  **제어판 → 전원 옵션 → 덮개를 닫을 때 하는 동작 → "아무 작업 안 함"**
+
+- 로그 확인: 작업 스케줄러에서 해당 작업 우클릭 → "실행" 으로 수동 테스트 가능
+- 코드 업데이트: `cd realty-telegram-bot; git pull`
