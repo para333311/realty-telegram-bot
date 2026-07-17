@@ -88,25 +88,39 @@ def fetch_page(session, page):
         doc_id = m.group(1)
         if doc_id in seen_ids:
             continue
-        title = a.get_text(" ", strip=True)
+        # 제목: <strong class="element-invisible">제목 : </strong>는 화면낭독기 전용
+        # 숨김 라벨이라 제외하고, 옆의 <span> 실제 제목만 사용한다.
+        title_span = a.find("span")
+        title = title_span.get_text(" ", strip=True) if title_span else a.get_text(" ", strip=True)
+        title = re.sub(r"^제목\s*[:：]\s*", "", title).strip()
         if len(title) < 5:
             continue
-        # 제목 링크가 속한 행(부모) 텍스트에서 날짜·기관을 찾는다.
-        row = a.find_parent(["li", "tr", "div"]) or a.parent
-        row_text = row.get_text(" ", strip=True) if row else title
+        # title-wrap div: 제목 + <p class="title-category">공개여부/기관명</p>
+        title_wrap = a.find_parent("div", class_="title-wrap") or a.find_parent(["li", "tr", "div"]) or a.parent
+        agency = ""
+        category_p = title_wrap.find("p", class_="title-category") if title_wrap else None
+        if category_p:
+            spans = category_p.find_all("span")
+            if spans:
+                agency = spans[-1].get_text(strip=True)
+        # 날짜는 title-wrap 안에 없어서, 한 단계 더 위(부모 행)에서 찾는다.
+        outer_row = title_wrap.find_parent(["li", "tr", "div"]) if title_wrap else None
+        date_source = outer_row or title_wrap or a.parent
+        row_text = date_source.get_text(" ", strip=True) if date_source else title
         date_m = DATE_RE.search(row_text)
         date_val = date_m.group(0).replace(".", "-") if date_m else ""
         seen_ids.add(doc_id)
         item = {
             "id": doc_id,
             "title": title,
+            "agency": agency,
             "date": date_val,
             "link": f"{BASE}/sanction/{doc_id}",
-            "row_text": row_text[:200],
+            "row_text": row_text[:250],
         }
         if DEBUG:
-            # [DEBUG] 실제 행 HTML 구조를 그대로 남긴다(날짜/제목 파싱 정밀 튜닝용).
-            item["raw_html"] = str(row)[:700] if row else str(a)[:700]
+            # [DEBUG] 날짜를 못 찾을 때 원인 파악용으로, 한 단계 더 넓은 범위의 HTML을 남긴다.
+            item["raw_html"] = str(outer_row or title_wrap)[:900] if (outer_row or title_wrap) else str(a)[:900]
         items.append(item)
     return items
 
@@ -157,7 +171,7 @@ def main():
     if DEBUG:
         for x in items[:15]:
             hit = "★" if matches(x) else " "
-            logger.info("[DEBUG]%s id=%s [%s] %s", hit, x["id"], x["date"], x["title"][:60])
+            logger.info("[DEBUG]%s id=%s [%s|%s] %s", hit, x["id"], x["date"], x.get("agency", ""), x["title"][:60])
         logger.info("[DEBUG] 첫 행 원본텍스트 예: %s", items[0]["row_text"] if items else "(없음)")
         # [DEBUG] 날짜/제목 파싱 정밀 튜닝을 위해 실제 행 HTML을 그대로 보여준다.
         for i, x in enumerate(items[:3]):
@@ -189,9 +203,10 @@ def main():
         # 오래된 것부터(목록은 최신순) 발송
         for x in reversed(new_items):
             date_part = f" ({x['date']})" if x["date"] else ""
+            agency_part = f"[{x['agency']}] " if x.get("agency") else ""
             send_message(
                 token, chat_id,
-                f"🏛️ [서울시 결재문서]{date_part}\n{x['title']}\n{x['link']}",
+                f"🏛️ {agency_part}결재문서{date_part}\n{x['title']}\n{x['link']}",
                 disable_preview=True,
             )
             saved.append(x["id"])
