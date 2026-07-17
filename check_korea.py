@@ -199,16 +199,32 @@ def collect_open_portal():
     # 검색 화면을 먼저 열어 세션 쿠키를 받는다.
     page = session.get(OPEN_PORTAL_PAGE, headers={"User-Agent": USER_AGENT}, timeout=(15, 40))
     page.raise_for_status()
+    # 페이지 폼의 기본 필드(숨은 토큰 포함)를 그대로 싣고, 검색 조건만 덮어쓴다.
+    page_soup = BeautifulSoup(page.text, "html.parser")
+    base_payload = {}
+    for el in page_soup.find_all(["input", "select"]):
+        name = el.get("name")
+        if not name:
+            continue
+        if el.name == "select":
+            opt = el.find("option", selected=True) or el.find("option")
+            base_payload.setdefault(name, (opt.get("value") or "") if opt else "")
+        else:
+            base_payload.setdefault(name, el.get("value") or "")
+
     if DEBUG:
-        # 검색 폼의 실제 파라미터 이름을 확인(파라미터 불일치 오류 대응)
-        page_soup = BeautifulSoup(page.text, "html.parser")
-        names = sorted({
-            el.get("name") for el in page_soup.find_all(["input", "select", "textarea"])
-            if el.get("name")
-        })
-        logger.info("[DEBUG] 원문정보 페이지 폼 필드(%d개): %s", len(names), names)
+        logger.info("[DEBUG] 원문정보 페이지 폼 필드(%d개): %s",
+                    len(base_payload), json.dumps(base_payload, ensure_ascii=False)[:1200])
         ajax_calls = sorted(set(re.findall(r"[\w/]+\.ajax", page.text)))
         logger.info("[DEBUG] 페이지 내 .ajax 호출: %s", ajax_calls)
+        idx = page.text.find("orginlInfoList.ajax")
+        if idx >= 0:
+            logger.info("[DEBUG] ajax 호출 주변 JS: %s",
+                        page.text[max(0, idx - 1200):idx + 400].replace("\n", " "))
+        idx2 = page.text.find("function searchCallFn")
+        if idx2 >= 0:
+            logger.info("[DEBUG] searchCallFn 정의: %s",
+                        page.text[idx2:idx2 + 1200].replace("\n", " "))
     headers = {
         "User-Agent": USER_AGENT,
         "Referer": OPEN_PORTAL_PAGE,
@@ -219,23 +235,18 @@ def collect_open_portal():
     searched_rows = 0
     sample_agencies = {}
     for keyword in KEYWORDS:
-        payload = {
+        payload = dict(base_payload)
+        payload.update({
             "kwd": keyword,
             "preKwds": keyword,
             "reSrchFlag": "off",
-            "othbcSeCd": "",
-            "insttSeCd": "",
             "eduYn": "N",
             "startDate": start.strftime("%Y%m%d"),
             "endDate": today.strftime("%Y%m%d"),
-            "insttCdNm": "",
-            "insttCd": "",
-            "searchInsttCdNmPop": "",
-            "searchMainYn": "",
             "viewPage": "1",
             "rowPage": "100",
             "sort": "s",
-        }
+        })
         response = session.post(OPEN_PORTAL_AJAX, data=payload, headers=headers, timeout=(15, 50))
         response.raise_for_status()
         try:
