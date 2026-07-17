@@ -4,3 +4,6 @@ __pycache__/
 subscriptions.db
 venv/
 .venv/
+
+# 한국 VM 로컬 상태 (GitHub Actions와 충돌 방지 위해 커밋 안 함)
+seen_korea.json
