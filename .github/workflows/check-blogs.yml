@@ -63,6 +63,9 @@ jobs:
         run: python check_sibo.py
 
       - name: 확인한 글 기록 저장
+        # 중간 단계가 실패해도 이미 발송한 알림의 기록은 반드시 커밋한다
+        # (기록이 누락되면 다음 실행에서 같은 알림이 중복 발송됨)
+        if: always()
         run: |
           if [ -n "$(git status --porcelain seen.json seen_boards.json seen_booriny.json seen_cafe.json seen_sibo.json)" ]; then
             git config user.name "github-actions[bot]"

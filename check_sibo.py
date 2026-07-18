@@ -141,7 +141,13 @@ def main():
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
 
     session = requests.Session()
-    issues = fetch_issue_list(session)
+    try:
+        issues = fetch_issue_list(session)
+    except requests.RequestException as e:
+        # 서울시 서버가 해외 IP 접속을 간헐적으로 막아 타임아웃이 난다.
+        # 이번 회차만 건너뛰면 다음 회차에 자연히 따라잡으므로 실패로 처리하지 않는다.
+        logger.warning("서울시보 목록 조회 실패(이번 회차 건너뜀): %s", e)
+        return
     logger.info("목록에서 호수 %d건 확인", len(issues))
 
     seen = load_seen()
