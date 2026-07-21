@@ -165,16 +165,25 @@ def scrape_seoul_api(url, keywords, row_keywords=(), name=""):
         if len(title) < 3:
             continue
 
-        if keywords and not any(k in title for k in keywords):
-            continue
+        title_hit = bool(keywords) and any(k in title for k in keywords)
+        row_hit = False
         if row_keywords:
             # 본문 필드는 제외하고 부서명 등 메타 필드에서만 찾는다 (본문 언급 오탐 방지)
             row_text = " ".join(
                 v for k, v in values.items()
                 if not any(x in k.upper() for x in ("CONTENT", "EXCERPT", "DESC"))
             )
-            if not any(k in row_text for k in row_keywords):
+            row_hit = any(k in row_text for k in row_keywords)
+        # 두 필터가 모두 지정되면 OR: 제목 키워드 또는 부서 중 하나만 맞으면 통과
+        # (서울시보도자료: 담당 5개 부서 글은 전부 + 타부서라도 재개발 키워드면 수신).
+        # 하나만 지정되면 그 필터만 적용한다.
+        if keywords and row_keywords:
+            if not (title_hit or row_hit):
                 continue
+        elif keywords and not title_hit:
+            continue
+        elif row_keywords and not row_hit:
+            continue
 
         link = next((v for v in values.values() if v.startswith("http")), "")
         if not link and values.get("POST_ID"):
