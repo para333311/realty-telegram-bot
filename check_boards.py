@@ -23,7 +23,7 @@ from urllib.parse import urlencode, urljoin
 import requests
 from bs4 import BeautifulSoup
 
-from check_once import send_message
+from check_once import send_message, title_matches
 
 try:
     from dotenv import load_dotenv
@@ -165,7 +165,7 @@ def scrape_seoul_api(url, keywords, row_keywords=(), name=""):
         if len(title) < 3:
             continue
 
-        title_hit = bool(keywords) and any(k in title for k in keywords)
+        title_hit = bool(keywords) and title_matches(title, keywords)
         row_hit = False
         if row_keywords:
             # 본문 필드는 제외하고 부서명 등 메타 필드에서만 찾는다 (본문 언급 오탐 방지)
@@ -360,7 +360,7 @@ def scrape_urban(url, keywords, row_keywords=(), name=""):
         if not gu:
             gu = values.get("site", "")
 
-        if keywords and not any(k in title for k in keywords):
+        if keywords and not title_matches(title, keywords):
             continue
         # row_keywords: 구 이름 목록이면 구(gu)로, 그 외(부서명 등)는 메타 필드로 매칭
         if row_keywords:
@@ -435,7 +435,7 @@ def scrape_commission(url, keywords, row_keywords=(), name=""):
         place_el = row.select_one(".place dd")
         place = place_el.get_text(" ", strip=True) if place_el else ""
 
-        if keywords and not any(k in title for k in keywords):
+        if keywords and not title_matches(title, keywords):
             continue
 
         display = f"{title} ({place})" if place else title
@@ -500,7 +500,7 @@ def scrape_board(url, keywords, row_keywords=(), name=""):
         if len(title) < 3:
             continue
 
-        if keywords and not any(k in title for k in keywords):
+        if keywords and not title_matches(title, keywords):
             continue
 
         # 부서 필터: 제목이 아닌 행 전체 텍스트(부서명 칸 포함)에서 찾는다

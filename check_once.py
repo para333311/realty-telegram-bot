@@ -28,6 +28,30 @@ except ImportError:
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+def keyword_in_title(title, keyword):
+    """제목에 특정 키워드가 실제로 매치되는지 확인한다.
+
+    '재개발'은 '인재개발원/인재개발과' 등 인사·교육 조직명에 흔히 포함돼
+    단순 부분일치로는 오탐이 난다(예: "[인재개발원 인재기획과] ..."). 그래서
+    '재개발' 앞 글자가 '인'인 경우는 매치로 보지 않는다.
+    """
+    if keyword != "재개발":
+        return keyword in title
+    idx = 0
+    while True:
+        pos = title.find(keyword, idx)
+        if pos == -1:
+            return False
+        if pos == 0 or title[pos - 1] != "인":
+            return True
+        idx = pos + 1
+
+
+def title_matches(title, keywords):
+    """제목이 keywords 중 하나라도 (오탐 제외하고) 포함하는지 확인한다."""
+    return any(keyword_in_title(title, k) for k in keywords)
+
 BLOGS_FILE = "blogs.txt"
 SEEN_FILE = "seen.json"
 SEEN_LINKS_KEEP = 200  # 블로그별로 보관할 확인한 글 링크 수

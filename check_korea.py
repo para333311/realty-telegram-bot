@@ -32,7 +32,7 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
-from check_once import send_message
+from check_once import send_message, title_matches
 
 try:
     from dotenv import load_dotenv
@@ -199,7 +199,7 @@ def collect_by_search(session):
 
 
 def matches(item):
-    return any(k in item["title"] for k in KEYWORDS)
+    return title_matches(item["title"], KEYWORDS)
 
 
 def load_seen():

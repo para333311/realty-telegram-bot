@@ -14,7 +14,7 @@ from datetime import date, timedelta
 import requests
 from bs4 import BeautifulSoup
 
-from check_once import send_message
+from check_once import keyword_in_title, send_message
 
 try:
     from dotenv import load_dotenv
@@ -98,7 +98,7 @@ def collect_posts(client_id, client_secret):
                 continue
             title = clean_html(item.get("title"))
             description = clean_html(item.get("description"))
-            if keyword not in title:
+            if not keyword_in_title(title, keyword):
                 continue
             written = extract_recent_date(title, description)
             if not written:
