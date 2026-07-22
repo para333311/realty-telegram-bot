@@ -28,6 +28,8 @@ import json
 import logging
 import os
 import re
+import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -230,7 +232,42 @@ def format_alert(x):
     return f"🏛️ {agency_part}결재문서{date_part}\n{x['title']}\n{x['link']}"
 
 
+def self_update():
+    """실행 시마다 git pull로 최신 코드를 받고, 코드가 바뀌었으면 재실행한다.
+
+    VM/집 PC에 접속해서 수동으로 git pull 할 필요를 없앤다.
+    - 저장소가 아니거나 네트워크 오류면 조용히 건너뛴다(감시가 우선).
+    - 무한 재실행 방지: 재실행된 프로세스는 환경변수 표식으로 다시 pull하지 않는다.
+    """
+    if os.environ.get("KOREA_SELF_UPDATED"):
+        return
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    try:
+        before = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo_dir,
+            capture_output=True, text=True, timeout=30,
+        ).stdout.strip()
+        result = subprocess.run(
+            ["git", "pull", "--ff-only"], cwd=repo_dir,
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            logger.info("자동 업데이트 건너뜀: %s", (result.stderr or result.stdout).strip()[:200])
+            return
+        after = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo_dir,
+            capture_output=True, text=True, timeout=30,
+        ).stdout.strip()
+        if before and after and before != after:
+            logger.info("코드 업데이트됨 (%s → %s): 새 코드로 재실행", before[:7], after[:7])
+            env = dict(os.environ, KOREA_SELF_UPDATED="1")
+            os.execve(sys.executable, [sys.executable, os.path.abspath(__file__)], env)
+    except Exception as exc:  # noqa: BLE001 - 업데이트 실패가 감시를 막으면 안 됨
+        logger.info("자동 업데이트 실패(무시): %s", exc)
+
+
 def main():
+    self_update()
     session = requests.Session()
 
     # 서울정보소통광장(opengov) 결재문서 — 서버 검색 우선, 실패시 목록 스캔 폴백
