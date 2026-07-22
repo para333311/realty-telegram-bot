@@ -240,8 +240,14 @@ def main():
         "User-Agent": USER_AGENT, "Content-Type": "application/json",
         "Origin": BASE, "Referer": BASE + "/",
     })
-    login(session)
-    listings = fetch_listings(session)
+    try:
+        login(session)
+        listings = fetch_listings(session)
+    except requests.RequestException as e:
+        # booriny.com이 API를 바꾸거나(로그인 405 등) 일시 장애가 나도, 워크플로우의
+        # 나머지 단계(카페·서울시보 확인)가 계속 돌아야 하므로 이번 회차만 건너뛴다.
+        logger.warning("booriny 조회 실패(이번 회차 건너뜀): %s", e)
+        return
     logger.info("받은 매물 %d건", len(listings))
 
     matched = [x for x in listings if matches(x)]
