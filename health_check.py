@@ -133,9 +133,7 @@ def maybe_report():
     """새벽 04시대(KST) 실행분에서만 하루 1회 리포트를 보낸다."""
     now = datetime.datetime.utcnow()
     # 크론이 매시 7,37분에 돌므로 19:07 UTC(=04:07 KST) 실행만 해당
-    # [임시] 배포 검증용 1회: 14:07 UTC(23:07 KST) 실행에서도 발송 — 확인 후 제거 예정
-    force_test = now.hour == 14 and now.minute < 30
-    if not (now.hour == 19 and now.minute < 30) and not force_test:
+    if not (now.hour == 19 and now.minute < 30):
         return
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
