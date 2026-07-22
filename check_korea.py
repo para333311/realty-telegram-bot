@@ -28,6 +28,7 @@ import json
 import logging
 import os
 import re
+from datetime import datetime, timedelta, timezone
 
 import requests
 from bs4 import BeautifulSoup
@@ -51,6 +52,11 @@ SEEN_KEEP = 3000
 # 수집 방식이 '전체 목록 스캔' → '서버 키워드 검색'으로 바뀐 뒤 첫 회차에
 # 검색이 새로 찾아낸 과거 문서들이 한꺼번에 알림되는 것을 막는 표식.
 SEARCH_MARKER = "opengov-search-v1"
+# 하루 1회 생존 신호(하트비트) 기록 접두어 — seen 목록에 "hb:YYYY-MM-DD"로 저장.
+# 새 문서가 없는 날이라도 이 메시지가 오면 스크립트가 살아있다는 뜻이다.
+# (침묵이 '새 소식 없음'인지 'PC 절전/스케줄러 중단'인지 구분하기 위함)
+HEARTBEAT_PREFIX = "hb:"
+KST = timezone(timedelta(hours=9))
 FETCH_PAGES = 5  # 30분마다 도니 최근 몇 페이지만 훑어도 새 문서를 놓치지 않는다
 DEBUG = os.environ.get("DEBUG", "").strip() not in ("", "0", "false", "False")
 
@@ -282,6 +288,19 @@ def main():
             send_message(token, chat_id, format_alert(x), disable_preview=True)
             saved.append(x["id"])
             logger.info("알림: %s", x["title"][:60])
+
+        # 하루 1회 생존 신호: 그날(KST) 첫 성공 실행 때 한 번만 발송한다.
+        hb_key = HEARTBEAT_PREFIX + datetime.now(KST).strftime("%Y-%m-%d")
+        if hb_key not in known:
+            send_message(
+                token, chat_id,
+                "🟢 [서울정보소통광장] 오늘도 정상 감시 중입니다 "
+                f"(이번 실행: 결재문서 {len(items)}건 확인, 키워드 통과 {len(matched)}건). "
+                "이 메시지가 하루 종일 안 오면 PC 스케줄러/절전 설정을 확인하세요.",
+                disable_preview=True,
+            )
+            saved.append(hb_key)
+            logger.info("하트비트 발송: %s", hb_key)
     finally:
         save_seen(saved + [SEARCH_MARKER])
 
