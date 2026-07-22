@@ -11,6 +11,12 @@ booriny.com에 로그인해 재개발 구역 내 최신 매물을 확인하고,
 - 다세대(빌라/연립, rlet_tp_cd C02) 유형만
 - 매매가 5억 이하
 
+알림 정책: "당일 기준" 모니터링 — 매물이 언제 등록됐는지와 무관하게,
+오늘(KST) 시점에 조건을 만족하는 구역별 최저가 매물을 하루 1회 알린다.
+(어제 알림된 매물이라도 오늘 여전히 5억 이하 최저가면 오늘 다시 알림.
+같은 날 안에서는 같은 매물 중복 알림 없음. 같은 날 더 싼 매물이 새로
+나타나면 그 매물도 추가 알림.)
+
 필요한 환경변수:
 - BOORINY_ID / BOORINY_PW : booriny.com 로그인 이메일/비밀번호
 - BOORINY_BOT_TOKEN : 매물 알림용 텔레그램 봇 토큰
@@ -25,9 +31,7 @@ import html
 import json
 import logging
 import os
-import re
-import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -176,35 +180,28 @@ def format_message(item):
     )
 
 
-def _normalize_date(value):
-    """날짜 필드를 '하루' 단위로 정규화한다.
+KST = timezone(timedelta(hours=9))
 
-    이 스크립트는 30분마다 실행되는데, 날짜 필드에 시:분:초까지 포함돼 있으면
-    (또는 조회 시점 타임스탬프라면) 매 실행마다 값이 달라져 같은 매물이 하루에
-    수십 번 알림되는 문제가 생긴다. 그래서 날짜 부분만 추출해 하루 단위로 묶는다.
-    """
-    s = str(value).strip()
-    m = re.match(r"\d{4}[-./]\d{2}[-./]\d{2}", s)
-    if m:
-        return m.group(0)
-    if s.isdigit() and len(s) in (10, 13):  # epoch(초) 또는 epoch(밀리초)
-        try:
-            ts = int(s) / (1000 if len(s) == 13 else 1)
-            return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
-        except (ValueError, OSError, OverflowError):
-            pass
-    return s
+
+def _today_kst():
+    # GitHub Actions는 UTC로 돌므로 '당일' 판정은 반드시 한국시간 기준으로 한다
+    return datetime.now(KST).strftime("%Y-%m-%d")
 
 
 def get_listing_key(item):
-    """매물의 고유 키를 생성 (ID + 날짜 조합으로 같은 매물이라도 새로 올라오면 다시 알림)"""
+    """'당일 기준' 중복 방지 키: 구역 + 오늘날짜(KST) + 매물ID.
+
+    - 날짜가 매물 등록일이 아니라 '오늘'이므로, 어제 알림된 매물이라도
+      오늘 여전히 조건(5억 이하 등)에 맞으면 오늘 다시 알림된다.
+    - 같은 날 안에서는 같은 매물이 다시 알림되지 않는다 (30분 주기 실행 대비).
+    - 매물ID가 키에 포함되므로, 같은 날 그 구역에 더 싼 매물이 새로 나타나
+      최저가가 바뀌면 그 매물도 알림된다.
+    """
+    zone = _zone_key(item)
+    if isinstance(zone, tuple):
+        zone = "/".join(str(z) for z in zone)
     item_id = str(item.get("id") or "")
-    # 가능한 날짜 필드명들 (첫 번째 존재하는 것 사용)
-    for date_field in ["reg_dt", "reg_date", "regDate", "rlet_reg_dt", "created_at", "updated_at"]:
-        if date_field in item and item[date_field]:
-            return f"{item_id}:{_normalize_date(item[date_field])}"
-    # 날짜가 없으면 ID만 사용 (하위호환성)
-    return item_id
+    return f"{zone}|{_today_kst()}|{item_id}"
 
 
 def load_seen():
@@ -268,21 +265,11 @@ def main():
         logger.info("첫 실행: 기준선 %d건 저장", len(matched))
         return
 
-    # 구 형식(ID만) 저장 항목 — ID+날짜 형식 도입 전에 이미 알림을 보냈던 매물.
-    # 이번 실행에서 처음 마주치면 재알림 없이 신 형식(ID:날짜)으로 조용히 업그레이드한다.
-    legacy_ids = {s for s in seen if ":" not in s}
-
+    # 구 형식 키(ID만 / ID:등록일)는 새 키 형식(구역|오늘날짜|ID)과 겹치지 않아
+    # 그대로 둬도 무해하다. seen은 SEEN_KEEP 개수 제한으로 자연히 밀려난다.
     to_alert = []
     for x in matched:
-        key = get_listing_key(x)
-        if key in seen_set:
-            continue
-        item_id = str(x.get("id") or "")
-        if item_id in legacy_ids:
-            if item_id in seen:
-                seen.remove(item_id)
-            seen.append(key)
-            legacy_ids.discard(item_id)
+        if get_listing_key(x) in seen_set:
             continue
         to_alert.append(x)
 
