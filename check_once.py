@@ -217,3 +217,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # 매일 새벽 04시대(KST) 실행분에서 하루 1회 자가점검 리포트 발송
+    try:
+        import health_check
+
+        health_check.maybe_report()
+    except Exception:
+        logger.exception("자가점검 실행 실패 (본 감시에는 영향 없음)")
