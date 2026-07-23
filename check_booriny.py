@@ -31,6 +31,7 @@ import html
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -50,6 +51,9 @@ logger = logging.getLogger(__name__)
 BASE = "https://booriny.com"
 SEEN_FILE = "seen_booriny.json"
 SEEN_KEEP = 2000
+
+# 점검 안내를 이미 보냈음을 기록하는 마커 (seen 리스트에 함께 저장돼 git 커밋됨)
+MAINT_MARKER = "status:maintenance-notified"
 
 # ── 필터 조건 ──
 GU_ALLOW = {
@@ -85,6 +89,21 @@ def login(session):
     r.raise_for_status()
     if not r.json().get("success"):
         raise RuntimeError("booriny 로그인 실패 — 아이디/비밀번호를 확인하세요")
+
+
+def get_maintenance_notice():
+    """booriny.com이 점검(maintenance) 페이지를 내보내고 있으면 안내 문구를,
+    아니면 None을 반환한다. (2026-07 실측: 사이트 전체가 Vercel의
+    x-matched-path=/maintenance 로 라우팅되고 API는 전부 405를 반환)"""
+    try:
+        r = requests.get(BASE + "/", timeout=(15, 30), headers={"User-Agent": USER_AGENT})
+    except requests.RequestException:
+        return None
+    if r.headers.get("x-matched-path") != "/maintenance" and "점검 중입니다" not in r.text:
+        return None
+    # 점검 페이지에서 재오픈 시점 문구를 뽑아 함께 알려준다 (예: "8월 중 다시 찾아뵙겠습니다")
+    m = re.search(r">([^<>]{0,40}다시 찾아뵙겠습니다[^<>]{0,10})<", r.text)
+    return m.group(1).strip() if m else "시스템 점검 중"
 
 
 def fetch_listings(session, limit=2000):
@@ -243,10 +262,28 @@ def main():
     try:
         login(session)
         listings = fetch_listings(session)
-    except requests.RequestException as e:
-        # booriny.com이 API를 바꾸거나(로그인 405 등) 일시 장애가 나도, 워크플로우의
-        # 나머지 단계(카페·서울시보 확인)가 계속 돌아야 하므로 이번 회차만 건너뛴다.
-        logger.warning("booriny 조회 실패(이번 회차 건너뜀): %s", e)
+    except Exception as e:
+        # booriny.com이 API를 바꾸거나(로그인 405 등) 점검·일시 장애가 나도,
+        # 워크플로우의 나머지 단계(카페·서울시보 확인)가 계속 돌아야 하므로
+        # 이번 회차만 경고 후 건너뛴다. 사이트가 복구되면 다음 실행에서
+        # 자동으로 정상 동작한다. (requests 예외뿐 아니라 로그인 실패 시
+        # login()이 던지는 RuntimeError도 함께 잡아야 하므로 Exception으로 넓게 처리)
+        logger.warning("booriny 접속 실패(점검 등으로 추정) - 이번 실행은 건너뜀: %s", e)
+        # 사이트가 점검 페이지를 내보내는 중이면, 사용자가 침묵을 장애로
+        # 오해하지 않도록 딱 1회만 안내 메시지를 보낸다.
+        seen = load_seen()
+        if MAINT_MARKER not in seen:
+            notice = get_maintenance_notice()
+            if notice:
+                send_message(
+                    token, chat_id,
+                    "🛠 부리니(booriny.com)가 사이트 점검에 들어가서 매물 알림이 "
+                    f"일시 중단됩니다.\n사이트 공지: \"{notice}\"\n"
+                    "점검이 끝나면 자동으로 감시를 재개하고 다시 알려드릴게요.",
+                )
+                seen.append(MAINT_MARKER)
+                save_seen(seen)
+                logger.info("점검 안내 발송: %s", notice)
         return
     logger.info("받은 매물 %d건", len(listings))
 
@@ -255,6 +292,15 @@ def main():
     logger.info("필터 통과(재개발구역·14구·다세대·5억이하, 구역별 최저가만) %d건", len(matched))
 
     seen = load_seen()
+    if MAINT_MARKER in seen:
+        # 점검이 끝나고 정상 조회에 성공 — 재개 안내 후 마커 제거
+        seen = [k for k in seen if k != MAINT_MARKER]
+        save_seen(seen)
+        send_message(
+            token, chat_id,
+            "✅ 부리니(booriny.com) 점검이 끝났습니다. 매물 감시를 다시 시작합니다.",
+        )
+        logger.info("점검 종료 — 감시 재개 안내 발송")
     seen_set = set(seen)
     first_run = not seen
 
