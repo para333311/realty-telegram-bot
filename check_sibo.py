@@ -196,10 +196,12 @@ def main():
             continue
 
         if matches:
-            titles = "\n".join(f"· {t}" for t in matches)
+            # 항목마다 번호를 붙이고 빈 줄로 띄워서 읽기 편하게 한다
+            # (붙어 있으면 어디서 항목이 끝나고 시작하는지 구분이 안 돼 가독성이 떨어짐).
+            titles = "\n\n".join(f"{i}. {t}" for i, t in enumerate(matches, 1))
             send_message(
                 token, chat_id,
-                f"📰 [서울시보 제{no}호, {info['date']}] 재개발 관련 목차\n{titles}\n{LIST_URL}",
+                f"📰 [서울시보 제{no}호, {info['date']}]\n재개발 관련 목차\n\n{titles}\n\n{LIST_URL}",
             )
             logger.info("제%s호: 재개발 관련 %d건 알림", no, len(matches))
         else:
