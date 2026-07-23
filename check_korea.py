@@ -210,6 +210,28 @@ def matches(item):
     return title_matches(item["title"], KEYWORDS)
 
 
+def latest_date(items):
+    """수집한 문서 중 가장 최근 등록일을 'YYYY-MM-DD'로 반환한다(없으면 "").
+
+    하트비트 카운트(결재문서/키워드 통과 건수)는 검색 페이지 크기에 좌우돼
+    새 문서가 올라와도 거의 매일 같은 값이 나온다. 반면 최근 등록일은 opengov가
+    실제로 최신 문서를 돌려주고 있는지를 보여주는 신뢰할 만한 신선도 신호다.
+    이 날짜가 며칠째 그대로면 서버가 캐시/과거 결과만 준다는 뜻이라 점검이 필요하다.
+    """
+    newest = None
+    for item in items:
+        m = re.search(r"(\d{4})[-.](\d{1,2})[-.](\d{1,2})", item.get("date") or "")
+        if not m:
+            continue
+        try:
+            parsed = datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            continue
+        if newest is None or parsed > newest:
+            newest = parsed
+    return newest.strftime("%Y-%m-%d") if newest else ""
+
+
 def load_seen():
     if not os.path.exists(SEEN_FILE):
         return None
@@ -329,11 +351,16 @@ def main():
         # 하루 1회 생존 신호: 그날(KST) 첫 성공 실행 때 한 번만 발송한다.
         hb_key = HEARTBEAT_PREFIX + datetime.now(KST).strftime("%Y-%m-%d")
         if hb_key not in known:
+            newest = latest_date(items)
+            # 건수(132/72 등)는 검색 페이지 크기에 좌우돼 새 문서가 있어도 거의
+            # 매일 같은 값이 나온다. 실제 신선도는 '최근 문서 날짜'로 판단한다.
+            freshness = f"최근 문서 {newest}" if newest else "최근 문서 날짜 확인 불가"
             send_message(
                 token, chat_id,
                 "🟢 [서울정보소통광장] 오늘도 정상 감시 중입니다 "
-                f"(이번 실행: 결재문서 {len(items)}건 확인, 키워드 통과 {len(matched)}건). "
-                "이 메시지가 하루 종일 안 오면 PC 스케줄러/절전 설정을 확인하세요.",
+                f"(이번 실행: {freshness}, 결재문서 {len(items)}건 확인, 키워드 통과 {len(matched)}건). "
+                "이 메시지가 하루 종일 안 오면 PC 스케줄러/절전 설정을 확인하세요. "
+                "'최근 문서' 날짜가 며칠째 그대로면 opengov가 옛 결과만 주는 것이니 점검이 필요합니다.",
                 disable_preview=True,
             )
             saved.append(hb_key)
