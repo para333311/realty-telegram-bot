@@ -113,7 +113,9 @@
   },
   "https://www.gwangjin.go.kr/portal/bbs/B0000001/list.do?pageIndex=1&menuNo=200190&deptId=&searchCnd=1&searchWrd=&sdate=&edate=": {
     "name": "광진구",
-    "keys": []
+    "keys": [
+      "신속통합기획 후보지 신청 동의양식 번호 부여 알림 (자양1동 614번지 일대)#2026-07-24"
+    ]
   },
   "https://www.junggu.seoul.kr/content.do?cmsid=14232": {
     "name": "중구",
