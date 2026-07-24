@@ -62,7 +62,7 @@
 
 ### 부동산스터디 네이버카페 새 글 알림
 
-`check_cafe.py`는 [부동산스터디 카페](https://cafe.naver.com/jaegebal)에서 재개발 관련 키워드(**설명회·단톡방·동의서·카톡방**)가 든 새 글을 찾아 게시판 알림 봇(`BOARD_BOT_TOKEN`, 재재보드봇)으로 알립니다.
+`check_cafe.py`는 [부동산스터디 카페](https://cafe.naver.com/jaegebal)에서 재개발 관련 키워드(**설명회·동의서**)가 든 새 글을 찾아 게시판 알림 봇(`BOARD_BOT_TOKEN`, 재재보드봇)으로 알립니다.
 
 - 네이버 카페는 RSS/공개 목록이 없어 로그인 없이 글을 직접 읽을 수 없으므로, 네이버가 공식 지원하는 **검색 오픈API**(`openapi.naver.com`)로 접근합니다. 따라서 검색 색인에 오른 공개 글만 잡히며, 회원 전용 비공개 글은 빠질 수 있습니다.
 - **시크릿**: `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`. [네이버 개발자센터](https://developers.naver.com/apps/#/register)에서 애플리케이션을 등록하고 "검색" API를 추가하면 발급됩니다(무료). 미등록 시 이 단계는 자동으로 건너뜁니다.
