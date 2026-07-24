@@ -76,6 +76,9 @@ def load_boards():
 
 
 TITLE_KEYS = ("TITLE", "POST_TITLE", "SJ", "NTT_SJ", "SUBJECT", "DOC_NM", "NEWS_TITLE", "TIT")
+# API 행에서 발행일로 쓸 칸 이름(우선순위)
+DATE_KEYS = ("PUBLISH_DATE", "POST_DATE", "REG_DATE", "REGIST_DATE", "REGDATE",
+             "NTT_DATE", "WRITE_DATE", "CREATE_DATE", "CRT_DATE", "DATE")
 DATE_RE = re.compile(r"\d{4}[-./]\d{1,2}[-./]\d{1,2}")
 # 한 글 행에서 여러 날짜(공고일·게시기간 종료일 등)를 모두 뽑기 위한 패턴(2자리 연도도 허용)
 DATE_ALL_RE = re.compile(r"\d{2,4}[-./]\d{1,2}[-./]\d{1,2}")
@@ -127,6 +130,27 @@ SEOUL_GU_CODE = {
     "11620": "관악구", "11650": "서초구", "11680": "강남구", "11710": "송파구",
     "11740": "강동구",
 }
+
+
+def pick_api_date(values):
+    """API 행에서 발행일을 고른다.
+
+    값을 순서대로 훑으면 썸네일 경로(//news.seoul.go.kr/…/files/2026/07/6…)가
+    먼저 걸려 실제 발행일과 다른 날짜가 알림에 찍히고, 그 경로가 바뀌면
+    글 식별키(제목#날짜)까지 달라져 같은 글이 다시 알림된다.
+    그래서 발행일 칸을 먼저 보고, 없을 때만 주소가 아닌 값에서 찾는다.
+    """
+    for key in DATE_KEYS:
+        m = DATE_RE.search(values.get(key, ""))
+        if m:
+            return m.group()
+    for value in values.values():
+        if value.startswith(("http", "//")) or "://" in value:
+            continue
+        m = DATE_RE.search(value)
+        if m:
+            return m.group()
+    return ""
 
 
 def scrape_seoul_api(url, keywords, row_keywords=(), name=""):
@@ -187,11 +211,9 @@ def scrape_seoul_api(url, keywords, row_keywords=(), name=""):
 
         link = next((v for v in values.values() if v.startswith("http")), "")
         if not link and values.get("POST_ID"):
-            # 서울시 보도자료(SeoulNewsList)는 링크 필드가 없어 직접 구성
+            # 서울시 뉴스(SeoulNewsList)는 링크 필드가 없어 직접 구성
             link = f"https://mediahub.seoul.go.kr/archives/{values['POST_ID']}"
-        date_val = next((m.group() for v in values.values()
-                         for m in [DATE_RE.search(v)] if m), "")
-        posts.append({"title": title, "link": link, "date": date_val})
+        posts.append({"title": title, "link": link, "date": pick_api_date(values)})
 
     logger.info("%s: API 행 %d개, 필터 통과 %d건", name or url, len(rows), len(posts))
     return posts
