@@ -41,6 +41,8 @@
 
 서울 열린데이터광장 OpenAPI(`openapi.seoul.go.kr`), 서울도시공간포털 JSON(`urban.seoul.go.kr`), 서울시 도시·건축위원회(`commission.eseoul.go.kr`), 정보공개포털 기관장 결재문서 검색(`open.go.kr`)은 사이트별 전용 파서로 자동 처리됩니다.
 
+서울시 보도자료는 원본 목록([`seoul.go.kr/news/news_report.do`](https://www.seoul.go.kr/news/news_report.do))을 제목 키워드로 감시합니다. 상세 링크가 자바스크립트로만 열려 알림은 목록 페이지로 안내합니다. 열린데이터광장의 `SeoulNewsList` API는 이름과 달리 보도자료가 아니라 `news.seoul.go.kr`(내 손안에 서울) **시정소식**이라 별도 게시판(`서울시 시정소식`)으로 두고, 제목 키워드와 담당 부서(`MANAGER_DEPT`) 필터로 함께 감시합니다.
+
 서울정보소통광장에는 `/openapi` JSONP가 실제로 있지만 해외 GitHub Actions IP에서는 TCP 연결 단계부터 차단됩니다. 그래서 정적 파싱을 포기하는 대신, 동일한 공개 결재문서를 검색할 수 있고 Actions에서 접속 가능한 **행정안전부 정보공개포털의 공식 AJAX 검색 API**를 1차 대체 경로로 사용합니다. 검색 API가 첨부파일 본문까지 찾는 특성 때문에 코드에서 제목을 다시 검사하고 서울시 본청과 감시 대상 14개 자치구만 허용해 오탐을 차단합니다. 최근 180일을 매 실행 검색하며 `seen_boards.json`으로 중복 알림을 방지합니다.
 
 `check_opengov.py`는 기존 `NAVER_CLIENT_ID`·`NAVER_CLIENT_SECRET`을 재사용하는 2차 보완 경로입니다. 네이버 공식 웹문서 검색에서 `opengov.seoul.go.kr/sanction/숫자` 문서만 받고, 제목에 키워드가 있으며 검색 설명에서 최근 45일 이내 실제 작성일을 확인할 수 있는 결과만 알립니다. 따라서 검색 색인 시점 때문에 오래된 문서가 새 문서처럼 재등장하던 과거 구현의 문제를 피합니다. 확인한 링크는 기존 `seen_cafe.json`에 `opengov:` 접두어로 함께 저장하므로 Actions 설정 변경 없이 자동 보존됩니다.
