@@ -5,8 +5,8 @@
 확인한 글 링크는 seen_cafe.json에 저장한다.
 
 감시 대상 카페: 부동산스터디 (https://cafe.naver.com/jaegebal)
-키워드: 설명회 · 단톡방 · 동의서 · 카톡방
-  (재개발 주민설명회/동의서 징구/단톡·카톡방 안내 관련 글을 잡기 위함)
+키워드: 설명회 · 동의서
+  (재개발 주민설명회/동의서 징구 관련 글을 잡기 위함)
 
 필요한 환경변수:
 - NAVER_CLIENT_ID / NAVER_CLIENT_SECRET : 네이버 개발자센터 검색 API 인증정보
@@ -48,7 +48,7 @@ SEEN_KEEP = 3000
 # 감시 대상 카페 (부동산스터디)
 CAFE_URL_HINT = "cafe.naver.com/jaegebal"
 # 키워드
-KEYWORDS = ["설명회", "단톡방", "동의서", "카톡방"]
+KEYWORDS = ["설명회", "동의서"]
 
 TAG_RE = re.compile(r"<[^>]+>")
 
