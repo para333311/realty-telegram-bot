@@ -326,7 +326,11 @@
   },
   "https://commission.eseoul.go.kr/cmitInfo/cmitSchdulList.do?cmitId=CM12": {
     "name": "공공주택통합심의위원회 일정·결과",
-    "keys": []
+    "keys": [
+      "2026년  제03차 공공주택통합심의위원회 ([서소문2청사 20층] 스마트회의실)#2026-07-21",
+      "2026년  제02차 공공주택통합심의위원회 ([서소문2청사 20층] 스마트회의실)#2026-06-24",
+      "2026년  제01차 공공주택통합심의위원회 ([서소문2청사 20층] 스마트회의실)#2026-01-27"
+    ]
   },
   "https://www.dongjak.go.kr/portal/singl/openApi/openDocList.do?menuNo=200144": {
     "name": "동작구 결재문서",
