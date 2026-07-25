@@ -122,6 +122,17 @@ def search_link(title):
     return f"{LIST_URL}?{urlencode({'searchKeyword': keyword})}"
 
 
+def link_candidates(item):
+    """같은 문서를 가리키는 주소 후보들 (사이트가 두 가지 형식을 쓴다).
+
+    - 짧은 형식: https://opengov.seoul.go.kr/sanction/36602771
+    - 뷰 형식:   https://opengov.seoul.go.kr/sanction/view/?nid=36602771
+    짧은 형식이 응답하지 않는 상황이 있어 뷰 형식까지 순서대로 열어본다.
+    """
+    candidates = [item["link"], f"{BASE}/sanction/view/?nid={item['id']}"]
+    return list(dict.fromkeys(c for c in candidates if c))
+
+
 def direct_link_ok(url):
     """알림에 넣을 문서 주소가 '맨손으로' 열리는지 확인한다.
 
@@ -129,10 +140,6 @@ def direct_link_ok(url):
     사용자가 텔레그램에서 링크만 눌렀을 때도 열리는지는 알 수 없다.
     그래서 쿠키·Referer 없는 새 요청으로 따로 확인한다.
     """
-    if LINK_MODE == "direct":
-        return True
-    if LINK_MODE == "search":
-        return False
     if _link_check_state["fail_streak"] >= LINK_FAIL_STREAK:
         return False
     if _link_check_state["used"] >= LINK_CHECK_LIMIT:
@@ -304,15 +311,31 @@ def save_seen(ids):
         f.write("\n")
 
 
+def best_link(x):
+    """알림에 넣을 링크를 고른다 — 실제로 열리는 주소를 우선한다.
+
+    반환값 (링크, 목록검색으로 대체했는지 여부).
+    """
+    if LINK_MODE == "direct":
+        return x["link"], False
+    if LINK_MODE == "search":
+        return search_link(x["title"]), True
+    for url in link_candidates(x):
+        if direct_link_ok(url):
+            return url, False
+    return search_link(x["title"]), True
+
+
 def format_alert(x):
     date_part = f" ({x['date']})" if x["date"] else ""
     agency_part = f"[{x['agency']}] " if x.get("agency") else ""
     head = f"🏛️ {agency_part}결재문서{date_part}\n{x['title']}"
-    if direct_link_ok(x["link"]):
-        return f"{head}\n{x['link']}"
+    link, replaced = best_link(x)
+    if not replaced:
+        return f"{head}\n{link}"
     return (
-        f"{head}\n{search_link(x['title'])}\n"
-        f"※ 문서 주소가 바로 열리지 않아 목록 검색 링크로 보냅니다 "
+        f"{head}\n{link}\n"
+        f"※ 문서 주소가 열리지 않아 목록 검색 링크로 보냅니다 "
         f"(직접 주소: {x['link']})"
     )
 
@@ -371,11 +394,11 @@ def main():
             hit = "★" if matches(x) else " "
             logger.info("[DEBUG]%s id=%s [%s|%s] %s", hit, x["id"], x["date"], x.get("agency", ""), x["title"][:60])
         for x in matched[-3:]:
-            # 휴대폰에서 링크가 열리는지와 같은 조건으로 확인해 본다.
-            logger.info(
-                "[DEBUG] 링크확인 %s → %s", x["link"],
-                "열림" if direct_link_ok(x["link"]) else f"막힘 (대안: {search_link(x['title'])})",
-            )
+            # 휴대폰에서 링크를 누르는 것과 같은 조건으로 주소 후보들을 열어 본다.
+            for url in link_candidates(x):
+                logger.info("[DEBUG] 링크확인 %s → %s", url, "열림" if direct_link_ok(url) else "막힘")
+            link, replaced = best_link(x)
+            logger.info("[DEBUG] 알림에 넣을 링크%s: %s", " (목록검색 대체)" if replaced else "", link)
         logger.info("[DEBUG] 디버그 모드: 알림/저장 생략")
         return
 
