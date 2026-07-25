@@ -32,6 +32,8 @@ import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
+from urllib.parse import urlencode, urljoin, urlsplit
+
 import requests
 from bs4 import BeautifulSoup
 
@@ -77,6 +79,82 @@ USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 )
+# 링크 점검용 — 휴대폰에서 텔레그램 링크를 누르는 상황과 같은 조건을 흉내낸다.
+MOBILE_USER_AGENT = (
+    "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+)
+# 알림에 넣을 링크 결정 방식:
+# - auto(기본): 문서 주소가 실제로 열리는지 확인해 안 열리면 목록 검색 링크로 보냄
+# - direct: 확인 없이 항상 문서 주소 (예전 동작)
+# - search: 확인 없이 항상 목록 검색 링크 (휴대폰에서 계속 안 열릴 때 강제 전환용)
+LINK_MODE = (os.environ.get("OPENGOV_LINK_MODE", "").strip().lower() or "auto")
+LINK_CHECK_LIMIT = 30  # 한 실행에서 링크 확인 요청을 이만큼까지만 보낸다
+LINK_FAIL_STREAK = 3  # 연속 실패면 사이트가 직접 진입을 막는 상태로 보고 확인을 멈춘다
+_link_check_state = {"used": 0, "fail_streak": 0}
+
+
+def absolute_link(href, doc_id):
+    """목록 페이지의 href를 그대로 살려 절대 https 주소로 만든다.
+
+    문서 주소에 조회에 필요한 쿼리스트링이 붙는 경우까지 그대로 전달하기 위해
+    `/sanction/{id}` 를 직접 조립하지 않고 사이트가 준 링크를 우선 사용한다.
+    """
+    url = urljoin(BASE + "/", (href or "").split("#")[0].strip())
+    parts = urlsplit(url)
+    if (
+        parts.scheme in ("http", "https")
+        and parts.netloc.endswith("opengov.seoul.go.kr")
+        and SANCTION_RE.search(parts.path)
+    ):
+        return url.replace("http://", "https://", 1)
+    return f"{BASE}/sanction/{doc_id}"
+
+
+def search_link(title):
+    """제목으로 결재문서 목록을 검색하는 주소.
+
+    문서 주소를 직접 열지 못할 때(정보소통광장이 외부에서의 상세페이지 직접
+    진입을 끊어 ERR_EMPTY_RESPONSE가 나는 경우) 대신 안내하는 링크다.
+    목록 페이지는 검색어 파라미터로 바로 열리므로 여기서 문서를 눌러 들어가면 된다.
+    """
+    keyword = re.sub(r"\s+", " ", title or "").strip()[:60]
+    return f"{LIST_URL}?{urlencode({'searchKeyword': keyword})}"
+
+
+def direct_link_ok(url):
+    """알림에 넣을 문서 주소가 '맨손으로' 열리는지 확인한다.
+
+    수집용 세션은 목록 페이지를 먼저 거치면서 쿠키와 Referer를 갖게 되므로,
+    사용자가 텔레그램에서 링크만 눌렀을 때도 열리는지는 알 수 없다.
+    그래서 쿠키·Referer 없는 새 요청으로 따로 확인한다.
+    """
+    if LINK_MODE == "direct":
+        return True
+    if LINK_MODE == "search":
+        return False
+    if _link_check_state["fail_streak"] >= LINK_FAIL_STREAK:
+        return False
+    if _link_check_state["used"] >= LINK_CHECK_LIMIT:
+        return True  # 확인 못 한 건 예전처럼 문서 주소 그대로 보낸다
+    _link_check_state["used"] += 1
+    try:
+        response = requests.get(
+            url,
+            headers={
+                "User-Agent": MOBILE_USER_AGENT,
+                "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+            },
+            timeout=(10, 25),
+        )
+        ok = response.status_code == 200 and len(response.content) > 500
+        if not ok:
+            logger.info("문서 주소가 바로 열리지 않음(%s): status=%s", url, response.status_code)
+    except requests.RequestException as exc:
+        logger.info("문서 주소 확인 실패(%s): %s", url, exc)
+        ok = False
+    _link_check_state["fail_streak"] = 0 if ok else _link_check_state["fail_streak"] + 1
+    return ok
 
 
 def fetch_page(session, page, extra_params=None):
@@ -159,7 +237,7 @@ def fetch_page(session, page, extra_params=None):
             "title": title,
             "agency": dept or agency,  # 부서명이 더 구체적이라 우선 사용
             "date": date_val,
-            "link": f"{BASE}/sanction/{doc_id}",
+            "link": absolute_link(a.get("href"), doc_id),
         }
         items.append(item)
     return items
@@ -229,7 +307,14 @@ def save_seen(ids):
 def format_alert(x):
     date_part = f" ({x['date']})" if x["date"] else ""
     agency_part = f"[{x['agency']}] " if x.get("agency") else ""
-    return f"🏛️ {agency_part}결재문서{date_part}\n{x['title']}\n{x['link']}"
+    head = f"🏛️ {agency_part}결재문서{date_part}\n{x['title']}"
+    if direct_link_ok(x["link"]):
+        return f"{head}\n{x['link']}"
+    return (
+        f"{head}\n{search_link(x['title'])}\n"
+        f"※ 문서 주소가 바로 열리지 않아 목록 검색 링크로 보냅니다 "
+        f"(직접 주소: {x['link']})"
+    )
 
 
 def self_update():
@@ -285,6 +370,12 @@ def main():
         for x in items[:15]:
             hit = "★" if matches(x) else " "
             logger.info("[DEBUG]%s id=%s [%s|%s] %s", hit, x["id"], x["date"], x.get("agency", ""), x["title"][:60])
+        for x in matched[-3:]:
+            # 휴대폰에서 링크가 열리는지와 같은 조건으로 확인해 본다.
+            logger.info(
+                "[DEBUG] 링크확인 %s → %s", x["link"],
+                "열림" if direct_link_ok(x["link"]) else f"막힘 (대안: {search_link(x['title'])})",
+            )
         logger.info("[DEBUG] 디버그 모드: 알림/저장 생략")
         return
 
