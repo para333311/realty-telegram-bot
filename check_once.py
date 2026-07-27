@@ -29,6 +29,14 @@ logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=lo
 logger = logging.getLogger(__name__)
 
 
+# 넓은 '정비' 키워드가 도시정비와 무관하게 걸리는 대표적인 업무 영역들.
+# (유지보수·단속·환경미화 등 — 실제 알림 기록에서 관측된 오탐 기준)
+UNRELATED_MAINTENANCE_WORDS = (
+    "광고물", "물놀이", "침수", "하수도", "제설", "가로등", "보도블록",
+    "불법주정차", "환경정비", "기간제근로자", "채용", "가지치기", "방역",
+)
+
+
 def keyword_in_title(title, keyword):
     """제목에 특정 키워드가 실제로 매치되는지 확인한다.
 
@@ -39,11 +47,20 @@ def keyword_in_title(title, keyword):
       개인정보 수집·이용·제공 동의서(인사·행정용)가 결재문서에 흔해
       오탐이 난다. 제목에 '개인정보'/'개인 정보'가 함께 있으면 재개발
       동의서(조합설립·정비구역 지정 등)가 아니라고 보고 매치하지 않는다.
+    - 넓은 '정비'는 도시정비와 무관한 유지보수·단속 업무에도 두루 쓰여
+      오탐이 잦다(실제 관측: "불법광고물 정비 기간제근로자 채용",
+      "중랑천 물놀이장 휴장 안내(침수정비 및 오후우천)"). 아래 무관어가
+      제목에 있으면 매치로 보지 않는다. '정비구역·정비사업' 등 구체적인
+      키워드는 이 가드를 타지 않으므로 도시정비 공고는 그대로 걸린다.
     """
     if keyword == "동의서":
         if keyword not in title:
             return False
         return "개인정보" not in title and "개인 정보" not in title
+    if keyword == "정비":
+        if keyword not in title:
+            return False
+        return not any(w in title for w in UNRELATED_MAINTENANCE_WORDS)
     if keyword != "재개발":
         return keyword in title
     idx = 0
