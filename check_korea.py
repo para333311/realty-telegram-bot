@@ -89,10 +89,16 @@ MOBILE_USER_AGENT = (
     "(KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
 )
 # 알림에 넣을 링크 결정 방식:
-# - auto(기본): 문서 주소가 실제로 열리는지 확인해 안 열리면 목록 검색 링크로 보냄
+# - search(기본): 확인 없이 항상 목록 검색 링크. 2026-07-27 실사용 확인: auto의
+#   사전 확인(direct_link_ok)이 "열림"으로 판정해도 실제 사용자가 나중에 누르면
+#   ERR_EMPTY_RESPONSE가 나는 경우가 있었다. 정보소통광장이 문서 주소 직접
+#   진입을 막는 방식이 '한 번 성공하면 계속 성공'이 아니라(세션·시간차에 따라
+#   달라지는 것으로 추정), 사전 확인 통과가 실제 클릭 성공을 보장하지 못한다.
+#   그래서 항상 열리는 목록 검색 링크를 기본값으로 바꿨다.
+# - auto: 문서 주소가 실제로 열리는지 확인해 안 열리면 목록 검색 링크로 보냄
+#   (검증이 실제 클릭 시점의 성공을 보장하지 않으므로 참고용으로만 남겨둠)
 # - direct: 확인 없이 항상 문서 주소 (예전 동작)
-# - search: 확인 없이 항상 목록 검색 링크 (휴대폰에서 계속 안 열릴 때 강제 전환용)
-LINK_MODE = (os.environ.get("OPENGOV_LINK_MODE", "").strip().lower() or "auto")
+LINK_MODE = (os.environ.get("OPENGOV_LINK_MODE", "").strip().lower() or "search")
 LINK_CHECK_LIMIT = 30  # 한 실행에서 링크 확인 요청을 이만큼까지만 보낸다
 LINK_FAIL_STREAK = 3  # 연속 실패면 사이트가 직접 진입을 막는 상태로 보고 확인을 멈춘다
 _link_check_state = {"used": 0, "fail_streak": 0}
@@ -318,12 +324,14 @@ def save_seen(ids):
 def best_link(x):
     """알림에 넣을 링크를 고른다 — 실제로 열리는 주소를 우선한다.
 
-    반환값 (링크, 목록검색으로 대체했는지 여부).
+    반환값 (링크, 사전확인으로 대체했는지 여부). search 모드는 처음부터
+    목록검색 링크가 계획이라 '대체'가 아니므로 False를 반환한다(auto 모드에서
+    사전확인 실패로 대체된 경우만 True — 알림에 "왜 검색 링크인지" 안내 문구용).
     """
     if LINK_MODE == "direct":
         return x["link"], False
     if LINK_MODE == "search":
-        return search_link(x["title"]), True
+        return search_link(x["title"]), False
     for url in link_candidates(x):
         if direct_link_ok(url):
             return url, False
