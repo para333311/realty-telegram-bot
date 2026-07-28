@@ -11,6 +11,7 @@ blogs.txt에 적힌 블로그들의 RSS를 확인해서, 처음 보는 글이 �
 import json
 import logging
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -36,10 +37,109 @@ UNRELATED_MAINTENANCE_WORDS = (
     "불법주정차", "환경정비", "기간제근로자", "채용", "가지치기", "방역",
 )
 
+# '주민공람·주민설명회·주민간담회'처럼 절차 이름만으로 잡는 키워드는 도시정비와
+# 무관한 공공시설 사업에서도 똑같이 쓰인다. 아래 시설·사업 이름이 제목에 있으면
+# 재개발 절차가 아니라고 보고 제외한다(재개발 문서는 보통 구역명/사업유형을 함께 씀).
+UNRELATED_FACILITY_WORDS = (
+    "공원조성", "어린이공원", "도서관", "어린이집", "체육센터", "체육시설",
+    "복지관", "주차장 조성", "하천", "교량", "상수도", "학교", "보건소",
+    "문화센터", "쓰레기", "재활용", "버스노선", "지하철 출입구",
+)
+
+# '도시관리계획'은 재개발 관련 결정고시에도 쓰이지만, 실제 결정고시 목록의 다수는
+# 도로·철도 같은 기반시설(도시계획시설) 고시라 알림 소음이 크다.
+# (2026-07-28 실측: 결정고시 신규 5건이 전부 '도시계획시설:도로/철도' 고시)
+# 아래 시설 종류가 제목에 있으면 도시정비 문서가 아니라고 본다.
+INFRA_FACILITY_WORDS = (
+    "도로", "철도", "광장", "주차장", "공원", "녹지", "하수", "상수",
+    "학교", "유수지", "폐기물", "변전소", "송전", "열공급", "가스",
+    "자동차정류장", "궤도", "삭도", "유통업무설비", "방송통신시설",
+)
+
+# 위 기반시설 가드보다 우선하는 '재개발 문맥' 신호. 이 말이 제목에 있으면
+# 도로·철도가 함께 언급돼도(구역 안 도로 편입 등) 재개발 문서로 본다.
+REDEV_CONTEXT_WORDS = (
+    "재개발", "재건축", "정비구역", "정비계획", "정비사업", "모아타운",
+    "모아주택", "신속통합", "재정비촉진", "지구단위계획", "가로주택",
+    "소규모주택정비", "도심복합", "휴먼타운", "주택정비형",
+)
+
+
+# `가+나` 조건 키워드에서 두 낱말 사이에 끼어들 수 있는 글자 수 상한.
+# 실측 기준(2026-07-28): 실제 공문 최대 5글자
+#   "…전문가 대상지선정 자문회의…"(전문가+자문, 5) / "…건축허가 등 제한…"(1)
+# 반면 우연한 동시 등장은 11글자였다
+#   "건축허가 신청 처리기한 안내 및 주차 제한구역 변경"(건축허가+제한, 11)
+# 그 사이인 8을 상한으로 둔다.
+AND_KEYWORD_WINDOW = 8
+
+# 공백을 무시한 비교가 오히려 없는 낱말을 만들어내는 키워드는 원문 그대로 본다.
+# 예: '어린이집 통학차량 운행 동의 서류 제출' → 공백제거 시 '동의서류'가 되어
+#     '동의서'로 잘못 걸린다.
+NO_SPACE_STRIP_KEYWORDS = ("동의서",)
+
+
+def _strip_spaces(text):
+    """공백을 없앤 비교용 문자열.
+
+    공문 제목은 같은 말을 '자문회의'/'자문 회의', '건축허가'/'건축 허가'처럼
+    띄어쓰기만 다르게 쓰는 경우가 많아 공백을 무시하고 비교한다.
+    """
+    return re.sub(r"\s+", "", text or "")
+
+
+def _all_positions(haystack, needle):
+    positions, idx = [], 0
+    while True:
+        pos = haystack.find(needle, idx)
+        if pos == -1:
+            return positions
+        positions.append(pos)
+        idx = pos + 1
+
+
+def _and_keyword_in_title(title, parts):
+    """`가+나` 조건 키워드: 낱말이 모두, 서로 가까이 있어야 통과.
+
+    "모아타운(예정) 지역 내 건축허가 등 제한 요청"처럼 사이에 다른 말이 끼는
+    공문 제목을 잡기 위한 문법이다. 반대로 "건축허가 신청 안내 및 주차 제한
+    구역 변경"처럼 두 말이 서로 무관하게 멀리 떨어진 제목은 배제한다.
+
+    같은 낱말이 제목에 여러 번 나오면 **가장 가까운 조합**으로 판단한다
+    (예: "…관리계획(모아타운 관리계획) 수립(안)…"은 뒤쪽 '관리계획'과 '수립'이
+    붙어 있으므로 통과해야 한다).
+    """
+    flat = _strip_spaces(title)
+    flat_parts = [_strip_spaces(p) for p in parts]
+    if not all(flat_parts):
+        return False
+
+    occurrences = []
+    for part in flat_parts:
+        found = _all_positions(flat, part)
+        if not found:
+            return False
+        occurrences.append([(pos, pos + len(part)) for pos in found])
+
+    total_len = sum(len(p) for p in flat_parts)
+    best = None
+    # 낱말 수·출현 횟수가 모두 작아(제목 한 줄) 전체 조합을 봐도 부담이 없다.
+    from itertools import product
+
+    for combo in product(*occurrences):
+        span = max(e for _, e in combo) - min(s for s, _ in combo) - total_len
+        best = span if best is None else min(best, span)
+        if best <= 0:
+            break
+    return best is not None and best <= AND_KEYWORD_WINDOW
+
 
 def keyword_in_title(title, keyword):
     """제목에 특정 키워드가 실제로 매치되는지 확인한다.
 
+    - `가+나` 형태는 두 낱말이 모두(가까이) 있어야 통과하는 조건 키워드다
+      (예: `건축허가+제한`, `대상지+선정`). keywords.py 참고.
+    - 비교는 공백을 무시한다('자문 회의' == '자문회의').
     - '재개발'은 '인재개발원/인재개발과' 등 인사·교육 조직명에 흔히 포함돼
       단순 부분일치로는 오탐이 난다(예: "[인재개발원 인재기획과] ..."). 그래서
       '재개발' 앞 글자가 '인'인 경우는 매치로 보지 않는다.
@@ -52,23 +152,58 @@ def keyword_in_title(title, keyword):
       "중랑천 물놀이장 휴장 안내(침수정비 및 오후우천)"). 아래 무관어가
       제목에 있으면 매치로 보지 않는다. '정비구역·정비사업' 등 구체적인
       키워드는 이 가드를 타지 않으므로 도시정비 공고는 그대로 걸린다.
+    - '역세권'은 '역세권 청년주택/장기전세'처럼 재개발과 무관한 임대주택
+      공급 공고에도 쓰이지만, 초기 재개발에서 '역세권 활성화사업·역세권
+      재개발'도 중요해 키워드는 유지하고 무관어 가드만 적용한다.
     """
-    if keyword == "동의서":
-        if keyword not in title:
+    if "+" in keyword:
+        parts = [p for p in keyword.split("+") if p.strip()]
+        if len(parts) < 2:
+            keyword = parts[0] if parts else ""
+        else:
+            if not _and_keyword_in_title(title, parts):
+                return False
+            return not any(w in title for w in UNRELATED_MAINTENANCE_WORDS)
+
+    flat_keyword = _strip_spaces(keyword)
+    if not flat_keyword:
+        return False
+    # 공백 제거가 없는 낱말을 만들어내는 키워드는 원문 그대로 비교한다.
+    flat = title if flat_keyword in NO_SPACE_STRIP_KEYWORDS else _strip_spaces(title)
+
+    if flat_keyword == "동의서":
+        if flat_keyword not in flat:
             return False
-        return "개인정보" not in title and "개인 정보" not in title
-    if keyword == "정비":
-        if keyword not in title:
+        return "개인정보" not in _strip_spaces(title)
+    if flat_keyword in ("정비", "역세권"):
+        if flat_keyword not in flat:
             return False
         return not any(w in title for w in UNRELATED_MAINTENANCE_WORDS)
-    if keyword != "재개발":
-        return keyword in title
+    if flat_keyword == "도시관리계획":
+        if flat_keyword not in flat:
+            return False
+        # '도시계획시설:도로/철도' 등 기반시설 고시는 제외한다. 단 재개발 관련어가
+        # 함께 있으면(예: "…지구단위계획구역 지정 및 지구단위계획 결정") 통과시킨다.
+        if any(_strip_spaces(w) in flat for w in REDEV_CONTEXT_WORDS):
+            return True
+        return "도시계획시설" not in flat and not any(
+            _strip_spaces(w) in flat for w in INFRA_FACILITY_WORDS
+        )
+    if flat_keyword in ("주민공람", "주민설명회", "주민간담회"):
+        if flat_keyword not in flat:
+            return False
+        return not any(
+            _strip_spaces(w) in flat
+            for w in UNRELATED_MAINTENANCE_WORDS + UNRELATED_FACILITY_WORDS
+        )
+    if flat_keyword != "재개발":
+        return flat_keyword in flat
     idx = 0
     while True:
-        pos = title.find(keyword, idx)
+        pos = flat.find(flat_keyword, idx)
         if pos == -1:
             return False
-        if pos == 0 or title[pos - 1] != "인":
+        if pos == 0 or flat[pos - 1] != "인":
             return True
         idx = pos + 1
 

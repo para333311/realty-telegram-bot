@@ -23,6 +23,7 @@ from urllib.parse import urlencode, urljoin
 import requests
 from bs4 import BeautifulSoup
 
+import keywords as keyword_presets
 from check_once import send_message, title_matches
 
 try:
@@ -63,7 +64,13 @@ def load_boards():
                 continue
             keywords = []
             if len(parts) >= 3 and parts[2]:
-                keywords = [k.strip() for k in parts[2].split(",") if k.strip()]
+                # `@표준` 등 프리셋을 실제 키워드 목록으로 펼친다(keywords.py).
+                keywords, unknown = keyword_presets.resolve(parts[2].split(","))
+                if unknown:
+                    logger.warning(
+                        "%s: 알 수 없는 키워드 프리셋 무시 %s (사용 가능: %s)",
+                        parts[0], unknown, ", ".join(keyword_presets.PRESETS),
+                    )
             # 4번째 칸: 부서 필터 (제목이 아니라 글 행 전체 텍스트에서 찾음)
             row_keywords = []
             if len(parts) >= 4 and parts[3]:
@@ -536,11 +543,40 @@ def post_key(post):
     return f"{post['title']}#{post['date']}"
 
 
-def load_seen():
+def load_seen(boards=()):
+    """확인한 공고 기록을 읽고, 키를 '게시판 이름' 기준으로 정규화한다.
+
+    과거에는 게시판 주소를 키로 썼는데, 주소의 쿼리스트링만 손봐도(예: 한 번에
+    받는 목록 수를 pageSize=10 → 30으로 늘리는 조정) 그 게시판이 '새 게시판'으로
+    취급돼 기록이 사라졌다. 그러면 목록에 남아 있던 과거 공고 전부가 '새 공고'로
+    다시 알림되는 사고가 난다. 이름은 잘 바뀌지 않으니 이름을 키로 쓴다.
+    """
     if not os.path.exists(SEEN_FILE):
         return {}
     with open(SEEN_FILE, encoding="utf-8") as f:
-        return json.load(f)
+        raw = json.load(f)
+
+    url_to_name = {b["url"]: b["name"] for b in boards}
+    seen = {}
+    for key, entry in raw.items():
+        if not isinstance(entry, dict):
+            continue
+        # 예전 형식(주소 키)은 boards.txt의 이름으로 옮긴다. 주소가 바뀐 경우엔
+        # 기록 안에 남아 있는 name을 쓴다.
+        name = url_to_name.get(key) or entry.get("name") or key
+        existing = seen.get(name)
+        if existing is None:
+            seen[name] = entry
+            continue
+        # 같은 이름의 기록이 둘(옛 주소·새 주소) 있으면 합친다 — 중복 알림 방지.
+        merged_keys = list(dict.fromkeys(existing.get("keys", []) + entry.get("keys", [])))
+        seen[name] = {
+            "name": name,
+            "keys": merged_keys[:SEEN_KEEP],
+            # 한쪽이라도 정상 기록이면 '읽기 실패' 표시는 없앤다.
+            **({"error": True} if existing.get("error") and entry.get("error") else {}),
+        }
+    return seen
 
 
 def save_seen(seen):
@@ -577,7 +613,7 @@ def main():
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
 
-    seen = load_seen()
+    seen = load_seen(boards)
     results = fetch_all(boards)
 
     started = []
@@ -585,20 +621,20 @@ def main():
     try:
         for board in boards:
             url, name = board["url"], board["name"]
-            entry = seen.get(url)
+            entry = seen.get(name)  # 기록 키는 게시판 이름 (load_seen 참고)
             posts = results.get(url)
 
             if posts is None:
                 if entry is None:
                     failed.append(name)
-                    seen[url] = {"name": name, "keys": [], "error": True}
+                    seen[name] = {"name": name, "keys": [], "error": True}
                 continue
 
             keys = [post_key(p) for p in posts]
 
             if entry is None or entry.get("error"):
                 # 새로 등록된 게시판: 기존 공고는 알림 없이 기준선으로 저장
-                seen[url] = {"name": name, "keys": keys[:SEEN_KEEP]}
+                seen[name] = {"name": name, "keys": keys[:SEEN_KEEP]}
                 started.append(name)
                 logger.info("started watching %s (%d posts)", name, len(posts))
                 continue
@@ -634,9 +670,9 @@ def main():
                 "boards.txt의 주소를 확인해주세요.",
             )
 
-        # boards.txt에서 지워진 게시판의 기록은 정리
-        board_urls = {b["url"] for b in boards}
-        seen = {u: seen[u] for u in seen if u in board_urls}
+        # boards.txt에서 지워진 게시판의 기록은 정리 (이름 기준)
+        board_names = {b["name"] for b in boards}
+        seen = {n: seen[n] for n in seen if n in board_names}
     finally:
         save_seen(seen)
 
