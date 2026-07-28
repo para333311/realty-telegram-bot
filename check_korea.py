@@ -30,6 +30,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -60,6 +61,10 @@ SEARCH_MARKER = "opengov-search-v1"
 HEARTBEAT_PREFIX = "hb:"
 KST = timezone(timedelta(hours=9))
 FETCH_PAGES = 5  # 30분마다 도니 최근 몇 페이지만 훑어도 새 문서를 놓치지 않는다
+# 요청 사이 간격(초). 2026-07-25~28에 링크 사전확인 기능이 상세페이지를 매 실행
+# 최대 30회씩 두드리면서 집 IP가 opengov에 차단된 것으로 보이는 정황이 있었다
+# (그 기능은 제거됨). 남은 키워드 검색도 몰아치지 않도록 간격을 둔다.
+REQUEST_DELAY = 1.5
 DEBUG = os.environ.get("DEBUG", "").strip() not in ("", "0", "false", "False")
 
 # 재개발 관련 키워드(제목 기준)
@@ -194,7 +199,9 @@ def collect_by_search(session):
     그 위험이 없다. 검색이 비정상(전 키워드 0건)이면 None을 반환해 폴백한다.
     """
     all_items = {}
-    for kw in KEYWORDS:
+    for index, kw in enumerate(KEYWORDS):
+        if index:
+            time.sleep(REQUEST_DELAY)  # 연달아 두드리지 않도록 간격을 둔다
         try:
             items = fetch_page(session, 1, {"searchKeyword": kw})
         except Exception as e:
