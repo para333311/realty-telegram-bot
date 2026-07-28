@@ -237,9 +237,20 @@ def save_seen(ids):
 
 
 def format_alert(x):
+    """알림 메시지를 만든다.
+
+    2026-07-28 확인: opengov.seoul.go.kr는 첫 화면(BASE)은 외부에서 바로
+    열리지만 /sanction/ 하위 경로(결재문서 상세·목록 검색 모두)는 텔레그램
+    같은 곳에서 링크만 눌러 들어오면 막는다(세션 경유 확인용으로 추정).
+    서버가 막는 걸 클라이언트에서 우회할 방법이 없어 링크 형식을 더 바꾸지
+    않고, 항상 열리는 첫 화면 링크 + 안내 문구로 고정한다.
+    """
     date_part = f" ({x['date']})" if x["date"] else ""
     agency_part = f"[{x['agency']}] " if x.get("agency") else ""
-    return f"🏛️ {agency_part}결재문서{date_part}\n{x['title']}\n{x['link']}"
+    return (
+        f"🏛️ {agency_part}결재문서{date_part}\n{x['title']}\n"
+        f"({BASE} 에서 제목으로 검색해서 확인하세요)"
+    )
 
 
 def self_update():
