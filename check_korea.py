@@ -236,6 +236,37 @@ def save_seen(ids):
         f.write("\n")
 
 
+def debug_referer_check(url):
+    """리퍼러(Referer) 헤더 값에 따라 /sanction/ 응답이 달라지는지 확인한다.
+
+    가설: opengov가 '리퍼러 없음'은 통과시키고 '외부 앱(텔레그램 등)에서
+    왔다는 리퍼러'만 막는다면, 우리 사전확인(리퍼러 없이 요청)은 통과하는데
+    실제 텔레그램 클릭(리퍼러 있음)만 막히는 지금 상황이 정확히 설명된다.
+    쿠키 없는 새 세션으로, 리퍼러만 바꿔가며 같은 주소를 두드려 비교한다.
+    """
+    variants = {
+        "리퍼러 없음(우리 사전확인과 동일)": None,
+        "리퍼러=텔레그램(web.telegram.org)": "https://web.telegram.org/",
+        "리퍼러=텔레그램 앱(android-app)": "android-app://org.telegram.messenger/",
+        "리퍼러=opengov 목록(같은 사이트)": LIST_URL,
+        "리퍼러=구글": "https://www.google.com/",
+    }
+    mobile_ua = (
+        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+    )
+    logger.info("[DEBUG] ── 리퍼러별 응답 비교: %s ──", url)
+    for label, referer in variants.items():
+        headers = {"User-Agent": mobile_ua}
+        if referer:
+            headers["Referer"] = referer
+        try:
+            r = requests.get(url, headers=headers, timeout=(10, 20))
+            logger.info("[DEBUG] %s → HTTP %s, %d바이트", label, r.status_code, len(r.content))
+        except requests.RequestException as e:
+            logger.info("[DEBUG] %s → 실패: %s", label, e)
+
+
 def format_alert(x):
     """알림 메시지를 만든다.
 
@@ -316,6 +347,8 @@ def main():
         for x in items[:15]:
             hit = "★" if matches(x) else " "
             logger.info("[DEBUG]%s id=%s [%s|%s] %s", hit, x["id"], x["date"], x.get("agency", ""), x["title"][:60])
+        if items:
+            debug_referer_check(items[0]["link"])
         logger.info("[DEBUG] 디버그 모드: 알림/저장 생략")
         return
 
