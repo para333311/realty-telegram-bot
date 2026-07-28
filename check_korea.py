@@ -236,52 +236,18 @@ def save_seen(ids):
         f.write("\n")
 
 
-def debug_referer_check(url):
-    """리퍼러(Referer) 헤더 값에 따라 /sanction/ 응답이 달라지는지 확인한다.
-
-    가설: opengov가 '리퍼러 없음'은 통과시키고 '외부 앱(텔레그램 등)에서
-    왔다는 리퍼러'만 막는다면, 우리 사전확인(리퍼러 없이 요청)은 통과하는데
-    실제 텔레그램 클릭(리퍼러 있음)만 막히는 지금 상황이 정확히 설명된다.
-    쿠키 없는 새 세션으로, 리퍼러만 바꿔가며 같은 주소를 두드려 비교한다.
-    """
-    variants = {
-        "리퍼러 없음(우리 사전확인과 동일)": None,
-        "리퍼러=텔레그램(web.telegram.org)": "https://web.telegram.org/",
-        "리퍼러=텔레그램 앱(android-app)": "android-app://org.telegram.messenger/",
-        "리퍼러=opengov 목록(같은 사이트)": LIST_URL,
-        "리퍼러=구글": "https://www.google.com/",
-    }
-    mobile_ua = (
-        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
-    )
-    logger.info("[DEBUG] ── 리퍼러별 응답 비교: %s ──", url)
-    for label, referer in variants.items():
-        headers = {"User-Agent": mobile_ua}
-        if referer:
-            headers["Referer"] = referer
-        try:
-            r = requests.get(url, headers=headers, timeout=(10, 20))
-            logger.info("[DEBUG] %s → HTTP %s, %d바이트", label, r.status_code, len(r.content))
-        except requests.RequestException as e:
-            logger.info("[DEBUG] %s → 실패: %s", label, e)
-
-
 def format_alert(x):
     """알림 메시지를 만든다.
 
-    2026-07-28 확인: opengov.seoul.go.kr는 첫 화면(BASE)은 외부에서 바로
-    열리지만 /sanction/ 하위 경로(결재문서 상세·목록 검색 모두)는 텔레그램
-    같은 곳에서 링크만 눌러 들어오면 막는다(세션 경유 확인용으로 추정).
-    서버가 막는 걸 클라이언트에서 우회할 방법이 없어 링크 형식을 더 바꾸지
-    않고, 항상 열리는 첫 화면 링크 + 안내 문구로 고정한다.
+    2026-07-28 원인 확정: 링크 자체나 사이트 정책 문제가 아니라 텔레그램
+    인앱 브라우저(웹뷰)가 opengov 상세페이지 접근 시 막히는 것이었다
+    (카카오톡 웹뷰·외부 브라우저는 정상 동작 확인됨). 그래서 결재문서
+    직접 주소를 다시 그대로 보낸다 — 링크를 탭하면 안 열릴 수 있지만,
+    길게 눌러 "다른 브라우저에서 열기"를 선택하면 정상적으로 열린다.
     """
     date_part = f" ({x['date']})" if x["date"] else ""
     agency_part = f"[{x['agency']}] " if x.get("agency") else ""
-    return (
-        f"🏛️ {agency_part}결재문서{date_part}\n{x['title']}\n"
-        f"({BASE} 에서 제목으로 검색해서 확인하세요)"
-    )
+    return f"🏛️ {agency_part}결재문서{date_part}\n{x['title']}\n{x['link']}"
 
 
 def self_update():
@@ -347,8 +313,6 @@ def main():
         for x in items[:15]:
             hit = "★" if matches(x) else " "
             logger.info("[DEBUG]%s id=%s [%s|%s] %s", hit, x["id"], x["date"], x.get("agency", ""), x["title"][:60])
-        if items:
-            debug_referer_check(items[0]["link"])
         logger.info("[DEBUG] 디버그 모드: 알림/저장 생략")
         return
 
