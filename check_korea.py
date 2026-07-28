@@ -24,6 +24,7 @@ GitHub Actions 쪽 스크립트들과 역할이 겹치지 않게 분리돼 있�
   opengov 페이지 구조를 VM에서 처음 확인할 때 사용.
 """
 
+import html
 import json
 import logging
 import os
@@ -339,17 +340,22 @@ def best_link(x):
 
 
 def format_alert(x):
+    """텔레그램 HTML 파싱 모드로 보낼 메시지를 만든다.
+
+    search 모드 링크(검색어가 URL 인코딩된 querystring)를 그대로 보이면
+    percent-encoding 때문에 메시지가 알아보기 힘든 긴 문자열로 채워진다.
+    그래서 링크를 <a> 태그로 감싸 짧은 안내 문구만 보이게 한다.
+    """
     date_part = f" ({x['date']})" if x["date"] else ""
-    agency_part = f"[{x['agency']}] " if x.get("agency") else ""
-    head = f"🏛️ {agency_part}결재문서{date_part}\n{x['title']}"
+    agency_part = f"[{html.escape(x['agency'])}] " if x.get("agency") else ""
+    title = html.escape(x["title"])
+    head = f"🏛️ {agency_part}결재문서{date_part}\n{title}"
     link, replaced = best_link(x)
+    link_text = "🔍 목록에서 검색해서 보기" if link != x["link"] else "📄 문서 바로가기"
+    body = f'{head}\n<a href="{html.escape(link, quote=True)}">{link_text}</a>'
     if not replaced:
-        return f"{head}\n{link}"
-    return (
-        f"{head}\n{link}\n"
-        f"※ 문서 주소가 열리지 않아 목록 검색 링크로 보냅니다 "
-        f"(직접 주소: {x['link']})"
-    )
+        return body
+    return f"{body}\n※ 직접 주소가 안 열려 검색 링크로 보냈어요."
 
 
 def self_update():
@@ -448,7 +454,7 @@ def main():
     to_send = [x for x in matched if x["id"] not in known]
     try:
         for x in to_send:
-            send_message(token, chat_id, format_alert(x), disable_preview=True)
+            send_message(token, chat_id, format_alert(x), disable_preview=True, parse_mode="HTML")
             saved.append(x["id"])
             logger.info("알림: %s", x["title"][:60])
 
