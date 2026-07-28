@@ -24,7 +24,6 @@ GitHub Actions 쪽 스크립트들과 역할이 겹치지 않게 분리돼 있�
   opengov 페이지 구조를 VM에서 처음 확인할 때 사용.
 """
 
-import html
 import json
 import logging
 import os
@@ -32,8 +31,6 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
-
-from urllib.parse import urlencode, urljoin, urlsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -84,100 +81,6 @@ USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 )
-# 링크 점검용 — 휴대폰에서 텔레그램 링크를 누르는 상황과 같은 조건을 흉내낸다.
-MOBILE_USER_AGENT = (
-    "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
-)
-# 알림에 넣을 링크 결정 방식:
-# - search(기본): 확인 없이 항상 목록 검색 링크. 2026-07-27 실사용 확인: auto의
-#   사전 확인(direct_link_ok)이 "열림"으로 판정해도 실제 사용자가 나중에 누르면
-#   ERR_EMPTY_RESPONSE가 나는 경우가 있었다. 정보소통광장이 문서 주소 직접
-#   진입을 막는 방식이 '한 번 성공하면 계속 성공'이 아니라(세션·시간차에 따라
-#   달라지는 것으로 추정), 사전 확인 통과가 실제 클릭 성공을 보장하지 못한다.
-#   그래서 항상 열리는 목록 검색 링크를 기본값으로 바꿨다.
-# - auto: 문서 주소가 실제로 열리는지 확인해 안 열리면 목록 검색 링크로 보냄
-#   (검증이 실제 클릭 시점의 성공을 보장하지 않으므로 참고용으로만 남겨둠)
-# - direct: 확인 없이 항상 문서 주소 (예전 동작)
-LINK_MODE = (os.environ.get("OPENGOV_LINK_MODE", "").strip().lower() or "search")
-LINK_CHECK_LIMIT = 30  # 한 실행에서 링크 확인 요청을 이만큼까지만 보낸다
-LINK_FAIL_STREAK = 3  # 연속 실패면 사이트가 직접 진입을 막는 상태로 보고 확인을 멈춘다
-_link_check_state = {"used": 0, "fail_streak": 0}
-
-
-def absolute_link(href, doc_id):
-    """목록 페이지의 href를 그대로 살려 절대 https 주소로 만든다.
-
-    문서 주소에 조회에 필요한 쿼리스트링이 붙는 경우까지 그대로 전달하기 위해
-    `/sanction/{id}` 를 직접 조립하지 않고 사이트가 준 링크를 우선 사용한다.
-    """
-    url = urljoin(BASE + "/", (href or "").split("#")[0].strip())
-    parts = urlsplit(url)
-    if (
-        parts.scheme in ("http", "https")
-        and parts.netloc.endswith("opengov.seoul.go.kr")
-        and SANCTION_RE.search(parts.path)
-    ):
-        return url.replace("http://", "https://", 1)
-    return f"{BASE}/sanction/{doc_id}"
-
-
-def search_link(title):
-    """제목으로 문서를 찾을 수 있는 대체 링크.
-
-    2026-07-28 실사용 확인: opengov.seoul.go.kr는 상세페이지(/sanction/{id})
-    뿐 아니라 자체 목록 검색 링크(/sanction/list?searchKeyword=...)로 눌러도
-    똑같이 ERR_EMPTY_RESPONSE가 났다. 사전 확인 없이 막 만든 링크인데도
-    실패하는 걸 보면, 이 사이트는 외부(텔레그램 등)에서 오는 클릭을 어떤
-    경로든 막는 것으로 보인다. 그래서 opengov 도메인 자체로는 링크를 안
-    만들고, 항상 열리는 네이버 검색으로 대신 안내한다(정보소통광장 문서를
-    네이버가 site: 검색으로 색인하는 것을 check_opengov.py에서도 확인함).
-    """
-    keyword = re.sub(r"\s+", " ", title or "").strip()[:60]
-    query = f'"{keyword}" site:opengov.seoul.go.kr'
-    return f"https://search.naver.com/search.naver?{urlencode({'query': query})}"
-
-
-def link_candidates(item):
-    """같은 문서를 가리키는 주소 후보들 (사이트가 두 가지 형식을 쓴다).
-
-    - 짧은 형식: https://opengov.seoul.go.kr/sanction/36602771
-    - 뷰 형식:   https://opengov.seoul.go.kr/sanction/view/?nid=36602771
-    짧은 형식이 응답하지 않는 상황이 있어 뷰 형식까지 순서대로 열어본다.
-    """
-    candidates = [item["link"], f"{BASE}/sanction/view/?nid={item['id']}"]
-    return list(dict.fromkeys(c for c in candidates if c))
-
-
-def direct_link_ok(url):
-    """알림에 넣을 문서 주소가 '맨손으로' 열리는지 확인한다.
-
-    수집용 세션은 목록 페이지를 먼저 거치면서 쿠키와 Referer를 갖게 되므로,
-    사용자가 텔레그램에서 링크만 눌렀을 때도 열리는지는 알 수 없다.
-    그래서 쿠키·Referer 없는 새 요청으로 따로 확인한다.
-    """
-    if _link_check_state["fail_streak"] >= LINK_FAIL_STREAK:
-        return False
-    if _link_check_state["used"] >= LINK_CHECK_LIMIT:
-        return True  # 확인 못 한 건 예전처럼 문서 주소 그대로 보낸다
-    _link_check_state["used"] += 1
-    try:
-        response = requests.get(
-            url,
-            headers={
-                "User-Agent": MOBILE_USER_AGENT,
-                "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
-            },
-            timeout=(10, 25),
-        )
-        ok = response.status_code == 200 and len(response.content) > 500
-        if not ok:
-            logger.info("문서 주소가 바로 열리지 않음(%s): status=%s", url, response.status_code)
-    except requests.RequestException as exc:
-        logger.info("문서 주소 확인 실패(%s): %s", url, exc)
-        ok = False
-    _link_check_state["fail_streak"] = 0 if ok else _link_check_state["fail_streak"] + 1
-    return ok
 
 
 def fetch_page(session, page, extra_params=None):
@@ -260,7 +163,7 @@ def fetch_page(session, page, extra_params=None):
             "title": title,
             "agency": dept or agency,  # 부서명이 더 구체적이라 우선 사용
             "date": date_val,
-            "link": absolute_link(a.get("href"), doc_id),
+            "link": f"{BASE}/sanction/{doc_id}",
         }
         items.append(item)
     return items
@@ -327,40 +230,10 @@ def save_seen(ids):
         f.write("\n")
 
 
-def best_link(x):
-    """알림에 넣을 링크를 고른다 — 실제로 열리는 주소를 우선한다.
-
-    반환값 (링크, 사전확인으로 대체했는지 여부). search 모드는 처음부터
-    목록검색 링크가 계획이라 '대체'가 아니므로 False를 반환한다(auto 모드에서
-    사전확인 실패로 대체된 경우만 True — 알림에 "왜 검색 링크인지" 안내 문구용).
-    """
-    if LINK_MODE == "direct":
-        return x["link"], False
-    if LINK_MODE == "search":
-        return search_link(x["title"]), False
-    for url in link_candidates(x):
-        if direct_link_ok(url):
-            return url, False
-    return search_link(x["title"]), True
-
-
 def format_alert(x):
-    """텔레그램 HTML 파싱 모드로 보낼 메시지를 만든다.
-
-    search 모드 링크(검색어가 URL 인코딩된 querystring)를 그대로 보이면
-    percent-encoding 때문에 메시지가 알아보기 힘든 긴 문자열로 채워진다.
-    그래서 링크를 <a> 태그로 감싸 짧은 안내 문구만 보이게 한다.
-    """
     date_part = f" ({x['date']})" if x["date"] else ""
-    agency_part = f"[{html.escape(x['agency'])}] " if x.get("agency") else ""
-    title = html.escape(x["title"])
-    head = f"🏛️ {agency_part}결재문서{date_part}\n{title}"
-    link, replaced = best_link(x)
-    link_text = "📄 문서 바로가기" if link == x["link"] else "🔎 네이버에서 검색해서 보기"
-    body = f'{head}\n<a href="{html.escape(link, quote=True)}">{link_text}</a>'
-    if not replaced:
-        return body
-    return f"{body}\n※ 직접 주소가 안 열려 검색 링크로 보냈어요."
+    agency_part = f"[{x['agency']}] " if x.get("agency") else ""
+    return f"🏛️ {agency_part}결재문서{date_part}\n{x['title']}\n{x['link']}"
 
 
 def self_update():
@@ -416,12 +289,6 @@ def main():
         for x in items[:15]:
             hit = "★" if matches(x) else " "
             logger.info("[DEBUG]%s id=%s [%s|%s] %s", hit, x["id"], x["date"], x.get("agency", ""), x["title"][:60])
-        for x in matched[-3:]:
-            # 휴대폰에서 링크를 누르는 것과 같은 조건으로 주소 후보들을 열어 본다.
-            for url in link_candidates(x):
-                logger.info("[DEBUG] 링크확인 %s → %s", url, "열림" if direct_link_ok(url) else "막힘")
-            link, replaced = best_link(x)
-            logger.info("[DEBUG] 알림에 넣을 링크%s: %s", " (목록검색 대체)" if replaced else "", link)
         logger.info("[DEBUG] 디버그 모드: 알림/저장 생략")
         return
 
@@ -459,7 +326,7 @@ def main():
     to_send = [x for x in matched if x["id"] not in known]
     try:
         for x in to_send:
-            send_message(token, chat_id, format_alert(x), disable_preview=True, parse_mode="HTML")
+            send_message(token, chat_id, format_alert(x), disable_preview=True)
             saved.append(x["id"])
             logger.info("알림: %s", x["title"][:60])
 
