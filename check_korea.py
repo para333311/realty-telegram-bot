@@ -123,14 +123,19 @@ def absolute_link(href, doc_id):
 
 
 def search_link(title):
-    """제목으로 결재문서 목록을 검색하는 주소.
+    """제목으로 문서를 찾을 수 있는 대체 링크.
 
-    문서 주소를 직접 열지 못할 때(정보소통광장이 외부에서의 상세페이지 직접
-    진입을 끊어 ERR_EMPTY_RESPONSE가 나는 경우) 대신 안내하는 링크다.
-    목록 페이지는 검색어 파라미터로 바로 열리므로 여기서 문서를 눌러 들어가면 된다.
+    2026-07-28 실사용 확인: opengov.seoul.go.kr는 상세페이지(/sanction/{id})
+    뿐 아니라 자체 목록 검색 링크(/sanction/list?searchKeyword=...)로 눌러도
+    똑같이 ERR_EMPTY_RESPONSE가 났다. 사전 확인 없이 막 만든 링크인데도
+    실패하는 걸 보면, 이 사이트는 외부(텔레그램 등)에서 오는 클릭을 어떤
+    경로든 막는 것으로 보인다. 그래서 opengov 도메인 자체로는 링크를 안
+    만들고, 항상 열리는 네이버 검색으로 대신 안내한다(정보소통광장 문서를
+    네이버가 site: 검색으로 색인하는 것을 check_opengov.py에서도 확인함).
     """
     keyword = re.sub(r"\s+", " ", title or "").strip()[:60]
-    return f"{LIST_URL}?{urlencode({'searchKeyword': keyword})}"
+    query = f'"{keyword}" site:opengov.seoul.go.kr'
+    return f"https://search.naver.com/search.naver?{urlencode({'query': query})}"
 
 
 def link_candidates(item):
@@ -351,7 +356,7 @@ def format_alert(x):
     title = html.escape(x["title"])
     head = f"🏛️ {agency_part}결재문서{date_part}\n{title}"
     link, replaced = best_link(x)
-    link_text = "🔍 목록에서 검색해서 보기" if link != x["link"] else "📄 문서 바로가기"
+    link_text = "📄 문서 바로가기" if link == x["link"] else "🔎 네이버에서 검색해서 보기"
     body = f'{head}\n<a href="{html.escape(link, quote=True)}">{link_text}</a>'
     if not replaced:
         return body
