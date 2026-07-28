@@ -242,6 +242,13 @@ def self_update():
     VM/집 PC에 접속해서 수동으로 git pull 할 필요를 없앤다.
     - 저장소가 아니거나 네트워크 오류면 조용히 건너뛴다(감시가 우선).
     - 무한 재실행 방지: 재실행된 프로세스는 환경변수 표식으로 다시 pull하지 않는다.
+    - os.execve 대신 subprocess로 새 프로세스를 띄우고 끝날 때까지 기다린다.
+      윈도우는 진짜 exec(프로세스 이미지 교체)이 없어 os.execve가 '새 프로세스를
+      띄우고 원래 프로세스는 즉시 종료'하는 방식으로 동작하는데, 그러면 PowerShell이
+      원래 프로세스 종료를 보고 바로 명령 프롬프트를 돌려줘서 실제 작업(알림 발송)이
+      끝나기도 전에 실행이 끝난 것처럼 보인다(작업 스케줄러에서는 새 프로세스가
+      부모 종료와 함께 강제 종료될 위험도 있음). subprocess.run으로 자식이 끝날
+      때까지 부모가 살아서 기다리면 두 문제 다 없어진다.
     """
     if os.environ.get("KOREA_SELF_UPDATED"):
         return
@@ -265,7 +272,10 @@ def self_update():
         if before and after and before != after:
             logger.info("코드 업데이트됨 (%s → %s): 새 코드로 재실행", before[:7], after[:7])
             env = dict(os.environ, KOREA_SELF_UPDATED="1")
-            os.execve(sys.executable, [sys.executable, os.path.abspath(__file__)], env)
+            completed = subprocess.run(
+                [sys.executable, os.path.abspath(__file__)], cwd=repo_dir, env=env,
+            )
+            sys.exit(completed.returncode)
     except Exception as exc:  # noqa: BLE001 - 업데이트 실패가 감시를 막으면 안 됨
         logger.info("자동 업데이트 실패(무시): %s", exc)
 
