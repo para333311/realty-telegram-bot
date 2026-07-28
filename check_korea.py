@@ -61,9 +61,8 @@ SEARCH_MARKER = "opengov-search-v1"
 HEARTBEAT_PREFIX = "hb:"
 KST = timezone(timedelta(hours=9))
 FETCH_PAGES = 5  # 30분마다 도니 최근 몇 페이지만 훑어도 새 문서를 놓치지 않는다
-# 요청 사이 간격(초). 2026-07-25~28에 링크 사전확인 기능이 상세페이지를 매 실행
-# 최대 30회씩 두드리면서 집 IP가 opengov에 차단된 것으로 보이는 정황이 있었다
-# (그 기능은 제거됨). 남은 키워드 검색도 몰아치지 않도록 간격을 둔다.
+# 요청 사이 간격(초). 실행당 키워드 수만큼(현재 14회) 연속 요청이 나가므로
+# 정부 사이트에 몰아치지 않도록 간격을 둔다. 30분 주기라 20초쯤 늘어도 무방하다.
 REQUEST_DELAY = 1.5
 DEBUG = os.environ.get("DEBUG", "").strip() not in ("", "0", "false", "False")
 
