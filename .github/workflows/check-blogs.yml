@@ -36,10 +36,13 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.BLOG_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
         run: python check_once.py
 
+      # 재재보드 봇(구청 게시판·카페·서울시보 공용)이 보내는 알림은 전부 전용
+      # 채널(@jejeboard3)로 분리. BOARD_CHANNEL_ID 미설정 시 기존 개인 채팅으로
+      # 폴백해 시크릿 설정 전에도 알림이 끊기지 않는다.
       - name: 구청 게시판 새 공고 확인 및 알림 전송
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.BOARD_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_ID: ${{ secrets.BOARD_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
           SEOUL_API_KEY: ${{ secrets.SEOUL_API_KEY }}
         run: python check_boards.py
 
@@ -56,13 +59,13 @@ jobs:
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           BOARD_BOT_TOKEN: ${{ secrets.BOARD_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_ID: ${{ secrets.BOARD_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
         run: python check_cafe.py
 
       - name: 서울시보 재개발 관련 목차 확인 및 알림 전송
         env:
           BOARD_BOT_TOKEN: ${{ secrets.BOARD_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_ID: ${{ secrets.BOARD_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
         run: python check_sibo.py
 
       - name: 확인한 글 기록 저장
