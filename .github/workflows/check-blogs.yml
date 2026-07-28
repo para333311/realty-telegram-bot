@@ -30,7 +30,10 @@ jobs:
       - name: 블로그 새 글 확인 및 알림 전송
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # 블로그 알림만 전용 채널(@jejeboard2)로 분리. BLOG_CHANNEL_ID가
+          # 아직 등록 안 됐으면(신규 secret이라 없을 수 있음) 기존 개인 채팅으로
+          # 폴백해 시크릿 설정 전에도 알림이 끊기지 않게 한다.
+          TELEGRAM_CHAT_ID: ${{ secrets.BLOG_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
         run: python check_once.py
 
       - name: 구청 게시판 새 공고 확인 및 알림 전송
