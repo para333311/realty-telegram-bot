@@ -78,6 +78,11 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add seen.json seen_boards.json seen_booriny.json seen_cafe.json seen_sibo.json
             git commit -m "chore: 확인한 글 기록 업데이트"
-            git pull --rebase origin "$GITHUB_REF_NAME"
-            git push
+            # push가 GitHub 쪽 일시적 오류(예: commit_refs 오류)로 실패하면
+            # 기록 누락 → 다음 실행 중복 알림으로 이어지므로 몇 차례 재시도한다.
+            for attempt in 1 2 3 4; do
+              git pull --rebase origin "$GITHUB_REF_NAME" && git push && break
+              echo "push 실패, 재시도 $attempt/4"
+              sleep $((attempt * 5))
+            done
           fi
