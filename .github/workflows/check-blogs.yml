@@ -16,7 +16,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -27,7 +27,13 @@ jobs:
       - name: 의존성 설치
         run: pip install requests beautifulsoup4 pypdf
 
+      # rss.blog.naver.com이 통째로 응답 없을 때(2026-07-31 확인) 이 단계가
+      # job 전체 타임아웃까지 물고 늘어져 아래 무관한 소스(구청·부리니·카페·
+      # 시보) 알림까지 연쇄로 스킵됐다. 단계별 타임아웃 + continue-on-error로
+      # 이 단계만 포기하고 나머지는 계속 진행하게 한다.
       - name: 블로그 새 글 확인 및 알림 전송
+        timeout-minutes: 6
+        continue-on-error: true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           # 블로그 알림만 전용 채널(@jejeboard2)로 분리. BLOG_CHANNEL_ID가
