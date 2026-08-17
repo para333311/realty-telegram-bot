@@ -452,6 +452,89 @@ def scrape_commission(url, keywords, row_keywords=(), name=""):
     return posts
 
 
+def scrape_jaegebal(url, keywords, row_keywords=(), name=""):
+    """재개발닷컴(gnotices) 목록을 읽는다.
+
+    CloudFront 차단(403)으로 원본 페이지를 직접 읽지 못하는 환경이 있어,
+    원본 파싱이 실패하면 읽기 전용 미러(r.jina.ai)를 폴백으로 사용한다.
+    """
+
+    def _parse_label(label):
+        text = re.sub(r"\s+", " ", (label or "").strip())
+        title = text.split("###", 1)[-1].strip() if "###" in text else text
+        date_val = ""
+        m = re.search(r"(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일", text)
+        if m:
+            date_val = f"{int(m.group(1)):04d}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+        return title, date_val, text
+
+    posts = []
+    seen_links = set()
+
+    # 1) 원본 직접 파싱 시도
+    try:
+        response = requests.get(
+            url,
+            headers={"User-Agent": USER_AGENT, "Referer": url},
+            timeout=(20, 40),
+        )
+        if response.status_code == 200:
+            response.encoding = "utf-8"
+            soup = BeautifulSoup(response.text, "html.parser")
+            links = soup.select("a[href*='/gnotices/']")
+            for a in links:
+                title = a.get_text(" ", strip=True)
+                href = a.get("href", "")
+                if not title or not href:
+                    continue
+                full_link = urljoin(url, href)
+                if "/gnotices/" not in full_link:
+                    continue
+                if keywords and not title_matches(title, keywords):
+                    continue
+                if row_keywords:
+                    row_text = a.find_parent().get_text(" ", strip=True) if a.find_parent() else title
+                    if not any(k in row_text for k in row_keywords):
+                        continue
+                m = DATE_RE.search((a.find_parent().get_text(" ", strip=True) if a.find_parent() else "") + " " + title)
+                date_val = m.group() if m else ""
+                if full_link in seen_links:
+                    continue
+                seen_links.add(full_link)
+                posts.append({"title": title, "link": full_link, "date": date_val})
+    except Exception as e:
+        logger.info("%s: 재개발닷컴 원본 파싱 실패(%s), 폴백 시도", name or url, e)
+
+    if posts:
+        logger.info("%s: 재개발닷컴 원본 파싱 %d건", name or url, len(posts))
+        return posts
+
+    # 2) 폴백: r.jina.ai 미러(마크다운) 파싱
+    mirror_url = "https://r.jina.ai/http://" + re.sub(r"^https?://", "", url)
+    mirror = requests.get(mirror_url, timeout=(20, 60))
+    mirror.raise_for_status()
+    text = mirror.text
+
+    # [메타 ### 제목](http://jaegebal.com/gnotices/slug) 형태를 추출
+    pattern = re.compile(r"\[([^\]]+?)\]\((https?://(?:www\.)?jaegebal\.com/gnotices/[^)]+)\)")
+    for label, link in pattern.findall(text):
+        title, date_val, raw = _parse_label(label)
+        if len(title) < 3:
+            continue
+        if keywords and not title_matches(title, keywords):
+            continue
+        if row_keywords and not any(k in raw for k in row_keywords):
+            continue
+        full_link = link.replace("http://", "https://")
+        if full_link in seen_links:
+            continue
+        seen_links.add(full_link)
+        posts.append({"title": title, "link": full_link, "date": date_val})
+
+    logger.info("%s: 재개발닷컴 미러 파싱 %d건", name or url, len(posts))
+    return posts
+
+
 def scrape_board(url, keywords, row_keywords=(), name=""):
     if "open.go.kr/othicInfo/infoList/mnstrSanDocList" in url:
         return scrape_open_portal(url, keywords, row_keywords, name)
@@ -461,6 +544,8 @@ def scrape_board(url, keywords, row_keywords=(), name=""):
         return scrape_urban(url, keywords, row_keywords, name)
     if "commission.eseoul.go.kr" in url:
         return scrape_commission(url, keywords, row_keywords, name)
+    if "jaegebal.com/gnotices" in url:
+        return scrape_jaegebal(url, keywords, row_keywords, name)
     """게시판 목록에서 (제목, 링크, 날짜) 목록을 추출한다. jejeboard의 검증된 로직."""
     last_error = None
     for attempt in range(FETCH_ATTEMPTS):
