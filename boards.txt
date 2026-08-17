@@ -54,6 +54,17 @@
 동대문구 | https://www.ddm.go.kr/www/selectBbsNttList.do?key=904&bbsNo=38&integrDeptCode=&searchCnd=all&searchKrwd=&searchCtgry=%EB%8F%84%EC%8B%9C%EC%A0%95%EB%B9%84
 강동구 | https://www.gangdong.go.kr/web/newportal/bbs/b_111
 
+# ── 재개발닷컴(jaegebal.com) 통합 게시판 ──
+# 여러 기관의 고시·공고·보도자료를 한곳에 모아주는 집계 사이트.
+# - 고시/공고: sido=seoul로 서울만 받는다.
+# - 보도자료: 출처(서울시·국토교통부·한국부동산원 등) 상관없이 전부 받으므로
+#   기관 필터(org=)를 빼고 kind=press만 준다.
+# 이미 개별 감시 중인 구청·서울시보도자료와 겹치는 항목은 제목+날짜가 달라
+# 중복 알림될 수 있으니, 첫 회차 로그(행 N개 파싱)로 건수를 보고 조정한다.
+재개발닷컴 고시(서울) | https://jaegebal.com/gnotices?sido=seoul&kind=gosi
+재개발닷컴 공고(서울) | https://jaegebal.com/gnotices?sido=seoul&kind=gongo
+재개발닷컴 보도자료 | https://jaegebal.com/gnotices?kind=press
+
 # ── 구청별 결재문서 공개 게시판 ──
 # 각 구청 결재문서 화면은 실제 목록 없이 서울정보소통광장 JavaScript만 호출해
 # 정적 파싱 결과가 항상 0건이었다. 아래 정보공개포털 검색 하나로 서울시 본청과

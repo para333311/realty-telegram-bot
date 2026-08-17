@@ -30,9 +30,8 @@ import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta, timezone
-
-from urllib.parse import urlencode, urljoin, urlsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -53,50 +52,28 @@ BASE = "https://opengov.seoul.go.kr"
 LIST_URL = BASE + "/sanction/list"
 SEEN_FILE = "seen_korea.json"
 SEEN_KEEP = 3000
-# 수집 방식/검색어가 바뀐 뒤 첫 회차에, 검색이 새로 찾아낸 과거 문서들이
-# 한꺼번에 알림되는 것을 막는 표식. 검색어(SEARCH_KEYWORDS)를 늘릴 때마다
-# 뒤 숫자를 올려야 새 검색어가 찾아낸 과거 문서를 조용히 흡수한다.
-#   v1: 전체 목록 스캔 → 서버 키워드 검색 전환
-#   v2: 절차어 검색 추가(전문가 자문·대상지 선정·건축허가 제한 등) — 2026-07-28
-SEARCH_MARKER = "opengov-search-v2"
+# 수집 방식이 '전체 목록 스캔' → '서버 키워드 검색'으로 바뀐 뒤 첫 회차에
+# 검색이 새로 찾아낸 과거 문서들이 한꺼번에 알림되는 것을 막는 표식.
+SEARCH_MARKER = "opengov-search-v1"
 # 하루 1회 생존 신호(하트비트) 기록 접두어 — seen 목록에 "hb:YYYY-MM-DD"로 저장.
 # 새 문서가 없는 날이라도 이 메시지가 오면 스크립트가 살아있다는 뜻이다.
 # (침묵이 '새 소식 없음'인지 'PC 절전/스케줄러 중단'인지 구분하기 위함)
 HEARTBEAT_PREFIX = "hb:"
 KST = timezone(timedelta(hours=9))
 FETCH_PAGES = 5  # 30분마다 도니 최근 몇 페이지만 훑어도 새 문서를 놓치지 않는다
+# 요청 사이 간격(초). 실행당 키워드 수만큼(현재 14회) 연속 요청이 나가므로
+# 정부 사이트에 몰아치지 않도록 간격을 둔다. 30분 주기라 20초쯤 늘어도 무방하다.
+REQUEST_DELAY = 1.5
 DEBUG = os.environ.get("DEBUG", "").strip() not in ("", "0", "false", "False")
 
 # 재개발 관련 키워드(제목 기준)
 # 키워드마다 서버 검색을 1회씩 보내므로(개당 약 3초) 무한정 늘리지 않고,
 # 도시정비 문서에서만 쓰이는 표현 위주로 둔다. '역세권·지구단위계획'처럼
 # 일상 결재문서에도 흔한 말은 소음이 커서 뺐다.
-#
-# 검색어(SEARCH_KEYWORDS)와 제목 판정 키워드(KEYWORDS)를 분리한다:
-# - opengov 서버 검색은 넓은 말로 한 번 긁어오는 게 효율적이다
-#   ('모아타운' 검색 한 번이면 "모아타운 관리계획 총괄계획가(MP) 선정" 같은
-#    파생 문서까지 다 잡힌다).
-# - 반면 "2026년 제12차 전문가 자문회의 결과 알림(강동구)"처럼 제목에 사업
-#   유형어가 아예 없는 문서는 '전문가 자문' 같은 절차어로 따로 검색해야 한다.
-SEARCH_KEYWORDS = [
-    "재개발", "재건축", "신속통합", "모아타운", "모아주택", "도심복합",
-    "정비계획", "정비구역", "정비사업", "소규모주택정비", "후보지",
-    "동의서", "재정비촉진", "가로주택", "조합설립", "관리처분",
-    # 초기 재개발 신호: 사업 유형어 없이 절차만 적힌 공문을 잡는 검색어
-    "전문가 자문", "대상지 선정", "주민제안", "권리산정", "휴먼타운",
-    "건축허가 제한", "번호부여", "연번부여",
-]
-
-# 제목 판정용 — 검색으로 넘어온 결과 중 실제로 도시정비 문서인지 다시 거른다.
-# (opengov 검색은 첨부 본문까지 훑어 무관 문서가 섞여 들어온다)
 KEYWORDS = [
-    "재개발", "재건축", "신속통합", "신통", "모아타운", "모아주택",
-    "도심복합", "도심공공", "소규모주택정비", "가로주택", "재정비촉진",
-    "휴먼타운", "정비계획", "정비구역", "정비사업",
-    "관리계획+수립", "관리계획+결정", "권리산정", "토지거래허가",
-    "후보지", "대상지+선정", "주민제안", "전문가+자문", "자문회의+결과",
-    "동의서", "번호부여", "연번부여",
-    "조합설립", "사업시행", "관리처분", "건축허가+제한",
+    "재개발", "재건축", "신속통합", "모아타운", "도심복합",
+    "정비계획", "정비구역", "정비사업", "후보지", "동의서",
+    "재정비촉진", "가로주택", "조합설립", "관리처분",
 ]
 
 # opengov는 서울시 전용이라(본청+자치구) 별도 '서울' 필터는 필요 없다.
@@ -108,95 +85,6 @@ USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 )
-# 링크 점검용 — 휴대폰에서 텔레그램 링크를 누르는 상황과 같은 조건을 흉내낸다.
-MOBILE_USER_AGENT = (
-    "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
-)
-# 알림에 넣을 링크 결정 방식:
-# - search(기본): 확인 없이 항상 목록 검색 링크. 2026-07-27 실사용 확인: auto의
-#   사전 확인(direct_link_ok)이 "열림"으로 판정해도 실제 사용자가 나중에 누르면
-#   ERR_EMPTY_RESPONSE가 나는 경우가 있었다. 정보소통광장이 문서 주소 직접
-#   진입을 막는 방식이 '한 번 성공하면 계속 성공'이 아니라(세션·시간차에 따라
-#   달라지는 것으로 추정), 사전 확인 통과가 실제 클릭 성공을 보장하지 못한다.
-#   그래서 항상 열리는 목록 검색 링크를 기본값으로 바꿨다.
-# - auto: 문서 주소가 실제로 열리는지 확인해 안 열리면 목록 검색 링크로 보냄
-#   (검증이 실제 클릭 시점의 성공을 보장하지 않으므로 참고용으로만 남겨둠)
-# - direct: 확인 없이 항상 문서 주소 (예전 동작)
-LINK_MODE = (os.environ.get("OPENGOV_LINK_MODE", "").strip().lower() or "search")
-LINK_CHECK_LIMIT = 30  # 한 실행에서 링크 확인 요청을 이만큼까지만 보낸다
-LINK_FAIL_STREAK = 3  # 연속 실패면 사이트가 직접 진입을 막는 상태로 보고 확인을 멈춘다
-_link_check_state = {"used": 0, "fail_streak": 0}
-
-
-def absolute_link(href, doc_id):
-    """목록 페이지의 href를 그대로 살려 절대 https 주소로 만든다.
-
-    문서 주소에 조회에 필요한 쿼리스트링이 붙는 경우까지 그대로 전달하기 위해
-    `/sanction/{id}` 를 직접 조립하지 않고 사이트가 준 링크를 우선 사용한다.
-    """
-    url = urljoin(BASE + "/", (href or "").split("#")[0].strip())
-    parts = urlsplit(url)
-    if (
-        parts.scheme in ("http", "https")
-        and parts.netloc.endswith("opengov.seoul.go.kr")
-        and SANCTION_RE.search(parts.path)
-    ):
-        return url.replace("http://", "https://", 1)
-    return f"{BASE}/sanction/{doc_id}"
-
-
-def search_link(title):
-    """제목으로 결재문서 목록을 검색하는 주소.
-
-    문서 주소를 직접 열지 못할 때(정보소통광장이 외부에서의 상세페이지 직접
-    진입을 끊어 ERR_EMPTY_RESPONSE가 나는 경우) 대신 안내하는 링크다.
-    목록 페이지는 검색어 파라미터로 바로 열리므로 여기서 문서를 눌러 들어가면 된다.
-    """
-    keyword = re.sub(r"\s+", " ", title or "").strip()[:60]
-    return f"{LIST_URL}?{urlencode({'searchKeyword': keyword})}"
-
-
-def link_candidates(item):
-    """같은 문서를 가리키는 주소 후보들 (사이트가 두 가지 형식을 쓴다).
-
-    - 짧은 형식: https://opengov.seoul.go.kr/sanction/36602771
-    - 뷰 형식:   https://opengov.seoul.go.kr/sanction/view/?nid=36602771
-    짧은 형식이 응답하지 않는 상황이 있어 뷰 형식까지 순서대로 열어본다.
-    """
-    candidates = [item["link"], f"{BASE}/sanction/view/?nid={item['id']}"]
-    return list(dict.fromkeys(c for c in candidates if c))
-
-
-def direct_link_ok(url):
-    """알림에 넣을 문서 주소가 '맨손으로' 열리는지 확인한다.
-
-    수집용 세션은 목록 페이지를 먼저 거치면서 쿠키와 Referer를 갖게 되므로,
-    사용자가 텔레그램에서 링크만 눌렀을 때도 열리는지는 알 수 없다.
-    그래서 쿠키·Referer 없는 새 요청으로 따로 확인한다.
-    """
-    if _link_check_state["fail_streak"] >= LINK_FAIL_STREAK:
-        return False
-    if _link_check_state["used"] >= LINK_CHECK_LIMIT:
-        return True  # 확인 못 한 건 예전처럼 문서 주소 그대로 보낸다
-    _link_check_state["used"] += 1
-    try:
-        response = requests.get(
-            url,
-            headers={
-                "User-Agent": MOBILE_USER_AGENT,
-                "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
-            },
-            timeout=(10, 25),
-        )
-        ok = response.status_code == 200 and len(response.content) > 500
-        if not ok:
-            logger.info("문서 주소가 바로 열리지 않음(%s): status=%s", url, response.status_code)
-    except requests.RequestException as exc:
-        logger.info("문서 주소 확인 실패(%s): %s", url, exc)
-        ok = False
-    _link_check_state["fail_streak"] = 0 if ok else _link_check_state["fail_streak"] + 1
-    return ok
 
 
 def fetch_page(session, page, extra_params=None):
@@ -279,7 +167,7 @@ def fetch_page(session, page, extra_params=None):
             "title": title,
             "agency": dept or agency,  # 부서명이 더 구체적이라 우선 사용
             "date": date_val,
-            "link": absolute_link(a.get("href"), doc_id),
+            "link": f"{BASE}/sanction/{doc_id}",
         }
         items.append(item)
     return items
@@ -310,7 +198,9 @@ def collect_by_search(session):
     그 위험이 없다. 검색이 비정상(전 키워드 0건)이면 None을 반환해 폴백한다.
     """
     all_items = {}
-    for kw in SEARCH_KEYWORDS:
+    for index, kw in enumerate(KEYWORDS):
+        if index:
+            time.sleep(REQUEST_DELAY)  # 연달아 두드리지 않도록 간격을 둔다
         try:
             items = fetch_page(session, 1, {"searchKeyword": kw})
         except Exception as e:
@@ -346,35 +236,18 @@ def save_seen(ids):
         f.write("\n")
 
 
-def best_link(x):
-    """알림에 넣을 링크를 고른다 — 실제로 열리는 주소를 우선한다.
-
-    반환값 (링크, 사전확인으로 대체했는지 여부). search 모드는 처음부터
-    목록검색 링크가 계획이라 '대체'가 아니므로 False를 반환한다(auto 모드에서
-    사전확인 실패로 대체된 경우만 True — 알림에 "왜 검색 링크인지" 안내 문구용).
-    """
-    if LINK_MODE == "direct":
-        return x["link"], False
-    if LINK_MODE == "search":
-        return search_link(x["title"]), False
-    for url in link_candidates(x):
-        if direct_link_ok(url):
-            return url, False
-    return search_link(x["title"]), True
-
-
 def format_alert(x):
+    """알림 메시지를 만든다.
+
+    2026-07-28 원인 확정: 링크 자체나 사이트 정책 문제가 아니라 텔레그램
+    인앱 브라우저(웹뷰)가 opengov 상세페이지 접근 시 막히는 것이었다
+    (카카오톡 웹뷰·외부 브라우저는 정상 동작 확인됨). 그래서 결재문서
+    직접 주소를 다시 그대로 보낸다 — 링크를 탭하면 안 열릴 수 있지만,
+    길게 눌러 "다른 브라우저에서 열기"를 선택하면 정상적으로 열린다.
+    """
     date_part = f" ({x['date']})" if x["date"] else ""
     agency_part = f"[{x['agency']}] " if x.get("agency") else ""
-    head = f"🏛️ {agency_part}결재문서{date_part}\n{x['title']}"
-    link, replaced = best_link(x)
-    if not replaced:
-        return f"{head}\n{link}"
-    return (
-        f"{head}\n{link}\n"
-        f"※ 문서 주소가 열리지 않아 목록 검색 링크로 보냅니다 "
-        f"(직접 주소: {x['link']})"
-    )
+    return f"🏛️ {agency_part}결재문서{date_part}\n{x['title']}\n{x['link']}"
 
 
 def self_update():
@@ -383,6 +256,13 @@ def self_update():
     VM/집 PC에 접속해서 수동으로 git pull 할 필요를 없앤다.
     - 저장소가 아니거나 네트워크 오류면 조용히 건너뛴다(감시가 우선).
     - 무한 재실행 방지: 재실행된 프로세스는 환경변수 표식으로 다시 pull하지 않는다.
+    - os.execve 대신 subprocess로 새 프로세스를 띄우고 끝날 때까지 기다린다.
+      윈도우는 진짜 exec(프로세스 이미지 교체)이 없어 os.execve가 '새 프로세스를
+      띄우고 원래 프로세스는 즉시 종료'하는 방식으로 동작하는데, 그러면 PowerShell이
+      원래 프로세스 종료를 보고 바로 명령 프롬프트를 돌려줘서 실제 작업(알림 발송)이
+      끝나기도 전에 실행이 끝난 것처럼 보인다(작업 스케줄러에서는 새 프로세스가
+      부모 종료와 함께 강제 종료될 위험도 있음). subprocess.run으로 자식이 끝날
+      때까지 부모가 살아서 기다리면 두 문제 다 없어진다.
     """
     if os.environ.get("KOREA_SELF_UPDATED"):
         return
@@ -406,7 +286,10 @@ def self_update():
         if before and after and before != after:
             logger.info("코드 업데이트됨 (%s → %s): 새 코드로 재실행", before[:7], after[:7])
             env = dict(os.environ, KOREA_SELF_UPDATED="1")
-            os.execve(sys.executable, [sys.executable, os.path.abspath(__file__)], env)
+            completed = subprocess.run(
+                [sys.executable, os.path.abspath(__file__)], cwd=repo_dir, env=env,
+            )
+            sys.exit(completed.returncode)
     except Exception as exc:  # noqa: BLE001 - 업데이트 실패가 감시를 막으면 안 됨
         logger.info("자동 업데이트 실패(무시): %s", exc)
 
@@ -430,12 +313,6 @@ def main():
         for x in items[:15]:
             hit = "★" if matches(x) else " "
             logger.info("[DEBUG]%s id=%s [%s|%s] %s", hit, x["id"], x["date"], x.get("agency", ""), x["title"][:60])
-        for x in matched[-3:]:
-            # 휴대폰에서 링크를 누르는 것과 같은 조건으로 주소 후보들을 열어 본다.
-            for url in link_candidates(x):
-                logger.info("[DEBUG] 링크확인 %s → %s", url, "열림" if direct_link_ok(url) else "막힘")
-            link, replaced = best_link(x)
-            logger.info("[DEBUG] 알림에 넣을 링크%s: %s", " (목록검색 대체)" if replaced else "", link)
         logger.info("[DEBUG] 디버그 모드: 알림/저장 생략")
         return
 

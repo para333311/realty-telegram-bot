@@ -16,7 +16,9 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 아래 각 단계에 개별 타임아웃을 줬으므로(최악의 경우 합산 20분+여유),
+    # job 타임아웃도 그만큼 넉넉히 잡아 record-save 단계까지 항상 도달하게 한다.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -27,20 +29,42 @@ jobs:
       - name: 의존성 설치
         run: pip install requests beautifulsoup4 pypdf
 
+      # rss.blog.naver.com이 통째로 응답 없을 때(2026-07-31 확인) 이 단계가
+      # job 전체 타임아웃까지 물고 늘어져 아래 무관한 소스(구청·부리니·카페·
+      # 시보) 알림까지 연쇄로 스킵됐다. 단계별 타임아웃 + continue-on-error로
+      # 이 단계만 포기하고 나머지는 계속 진행하게 한다.
       - name: 블로그 새 글 확인 및 알림 전송
+        timeout-minutes: 6
+        continue-on-error: true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # 블로그 알림만 전용 채널(@jejeboard2)로 분리. BLOG_CHANNEL_ID가
+          # 아직 등록 안 됐으면(신규 secret이라 없을 수 있음) 기존 개인 채팅으로
+          # 폴백해 시크릿 설정 전에도 알림이 끊기지 않게 한다.
+          TELEGRAM_CHAT_ID: ${{ secrets.BLOG_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
         run: python check_once.py
 
+      # 재재보드 봇(구청 게시판·카페·서울시보 공용)이 보내는 알림은 전부 전용
+      # 채널(@jejeboard3)로 분리. BOARD_CHANNEL_ID 미설정 시 기존 개인 채팅으로
+      # 폴백해 시크릿 설정 전에도 알림이 끊기지 않는다.
+      #
+      # 2026-08-06 이 아래 네 단계 중 하나가 job 전체 타임아웃(당시 15분)까지
+      # 물고 늘어져 실행 취소된 사례가 두 차례 확인됨(구청 사이트 중 만성
+      # 타임아웃 나는 곳이 있음). 블로그 단계와 동일하게 단계별 타임아웃 +
+      # continue-on-error를 걸어, 한 소스가 멈춰도 나머지와 기록 저장은
+      # 계속 진행되게 한다.
       - name: 구청 게시판 새 공고 확인 및 알림 전송
+        timeout-minutes: 6
+        continue-on-error: true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.BOARD_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_ID: ${{ secrets.BOARD_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
           SEOUL_API_KEY: ${{ secrets.SEOUL_API_KEY }}
         run: python check_boards.py
 
       - name: 부리니 새 매물 확인 및 알림 전송
+        timeout-minutes: 3
+        continue-on-error: true
         env:
           BOORINY_ID: ${{ secrets.BOORINY_ID }}
           BOORINY_PW: ${{ secrets.BOORINY_PW }}
@@ -49,17 +73,21 @@ jobs:
         run: python check_booriny.py
 
       - name: 부동산스터디 카페 새 글 확인 및 알림 전송
+        timeout-minutes: 4
+        continue-on-error: true
         env:
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           BOARD_BOT_TOKEN: ${{ secrets.BOARD_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_ID: ${{ secrets.BOARD_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
         run: python check_cafe.py
 
       - name: 서울시보 재개발 관련 목차 확인 및 알림 전송
+        timeout-minutes: 5
+        continue-on-error: true
         env:
           BOARD_BOT_TOKEN: ${{ secrets.BOARD_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_ID: ${{ secrets.BOARD_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
         run: python check_sibo.py
 
       - name: 확인한 글 기록 저장
@@ -72,6 +100,11 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add seen.json seen_boards.json seen_booriny.json seen_cafe.json seen_sibo.json
             git commit -m "chore: 확인한 글 기록 업데이트"
-            git pull --rebase origin "$GITHUB_REF_NAME"
-            git push
+            # push가 GitHub 쪽 일시적 오류(예: commit_refs 오류)로 실패하면
+            # 기록 누락 → 다음 실행 중복 알림으로 이어지므로 몇 차례 재시도한다.
+            for attempt in 1 2 3 4; do
+              git pull --rebase origin "$GITHUB_REF_NAME" && git push && break
+              echo "push 실패, 재시도 $attempt/4"
+              sleep $((attempt * 5))
+            done
           fi
