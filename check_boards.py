@@ -23,6 +23,7 @@ from urllib.parse import urlencode, urljoin
 import requests
 from bs4 import BeautifulSoup
 
+import keywords as keyword_presets
 from check_once import send_message, title_matches
 
 try:
@@ -63,7 +64,13 @@ def load_boards():
                 continue
             keywords = []
             if len(parts) >= 3 and parts[2]:
-                keywords = [k.strip() for k in parts[2].split(",") if k.strip()]
+                # `@표준` 등 프리셋을 실제 키워드 목록으로 펼친다(keywords.py).
+                keywords, unknown = keyword_presets.resolve(parts[2].split(","))
+                if unknown:
+                    logger.warning(
+                        "%s: 알 수 없는 키워드 프리셋 무시 %s (사용 가능: %s)",
+                        parts[0], unknown, ", ".join(keyword_presets.PRESETS),
+                    )
             # 4번째 칸: 부서 필터 (제목이 아니라 글 행 전체 텍스트에서 찾음)
             row_keywords = []
             if len(parts) >= 4 and parts[3]:
@@ -445,6 +452,89 @@ def scrape_commission(url, keywords, row_keywords=(), name=""):
     return posts
 
 
+def scrape_jaegebal(url, keywords, row_keywords=(), name=""):
+    """재개발닷컴(gnotices) 목록을 읽는다.
+
+    CloudFront 차단(403)으로 원본 페이지를 직접 읽지 못하는 환경이 있어,
+    원본 파싱이 실패하면 읽기 전용 미러(r.jina.ai)를 폴백으로 사용한다.
+    """
+
+    def _parse_label(label):
+        text = re.sub(r"\s+", " ", (label or "").strip())
+        title = text.split("###", 1)[-1].strip() if "###" in text else text
+        date_val = ""
+        m = re.search(r"(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일", text)
+        if m:
+            date_val = f"{int(m.group(1)):04d}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+        return title, date_val, text
+
+    posts = []
+    seen_links = set()
+
+    # 1) 원본 직접 파싱 시도
+    try:
+        response = requests.get(
+            url,
+            headers={"User-Agent": USER_AGENT, "Referer": url},
+            timeout=(20, 40),
+        )
+        if response.status_code == 200:
+            response.encoding = "utf-8"
+            soup = BeautifulSoup(response.text, "html.parser")
+            links = soup.select("a[href*='/gnotices/']")
+            for a in links:
+                title = a.get_text(" ", strip=True)
+                href = a.get("href", "")
+                if not title or not href:
+                    continue
+                full_link = urljoin(url, href)
+                if "/gnotices/" not in full_link:
+                    continue
+                if keywords and not title_matches(title, keywords):
+                    continue
+                if row_keywords:
+                    row_text = a.find_parent().get_text(" ", strip=True) if a.find_parent() else title
+                    if not any(k in row_text for k in row_keywords):
+                        continue
+                m = DATE_RE.search((a.find_parent().get_text(" ", strip=True) if a.find_parent() else "") + " " + title)
+                date_val = m.group() if m else ""
+                if full_link in seen_links:
+                    continue
+                seen_links.add(full_link)
+                posts.append({"title": title, "link": full_link, "date": date_val})
+    except Exception as e:
+        logger.info("%s: 재개발닷컴 원본 파싱 실패(%s), 폴백 시도", name or url, e)
+
+    if posts:
+        logger.info("%s: 재개발닷컴 원본 파싱 %d건", name or url, len(posts))
+        return posts
+
+    # 2) 폴백: r.jina.ai 미러(마크다운) 파싱
+    mirror_url = "https://r.jina.ai/http://" + re.sub(r"^https?://", "", url)
+    mirror = requests.get(mirror_url, timeout=(20, 60))
+    mirror.raise_for_status()
+    text = mirror.text
+
+    # [메타 ### 제목](http://jaegebal.com/gnotices/slug) 형태를 추출
+    pattern = re.compile(r"\[([^\]]+?)\]\((https?://(?:www\.)?jaegebal\.com/gnotices/[^)]+)\)")
+    for label, link in pattern.findall(text):
+        title, date_val, raw = _parse_label(label)
+        if len(title) < 3:
+            continue
+        if keywords and not title_matches(title, keywords):
+            continue
+        if row_keywords and not any(k in raw for k in row_keywords):
+            continue
+        full_link = link.replace("http://", "https://")
+        if full_link in seen_links:
+            continue
+        seen_links.add(full_link)
+        posts.append({"title": title, "link": full_link, "date": date_val})
+
+    logger.info("%s: 재개발닷컴 미러 파싱 %d건", name or url, len(posts))
+    return posts
+
+
 def scrape_board(url, keywords, row_keywords=(), name=""):
     if "open.go.kr/othicInfo/infoList/mnstrSanDocList" in url:
         return scrape_open_portal(url, keywords, row_keywords, name)
@@ -454,6 +544,8 @@ def scrape_board(url, keywords, row_keywords=(), name=""):
         return scrape_urban(url, keywords, row_keywords, name)
     if "commission.eseoul.go.kr" in url:
         return scrape_commission(url, keywords, row_keywords, name)
+    if "jaegebal.com/gnotices" in url:
+        return scrape_jaegebal(url, keywords, row_keywords, name)
     """게시판 목록에서 (제목, 링크, 날짜) 목록을 추출한다. jejeboard의 검증된 로직."""
     last_error = None
     for attempt in range(FETCH_ATTEMPTS):
@@ -536,11 +628,40 @@ def post_key(post):
     return f"{post['title']}#{post['date']}"
 
 
-def load_seen():
+def load_seen(boards=()):
+    """확인한 공고 기록을 읽고, 키를 '게시판 이름' 기준으로 정규화한다.
+
+    과거에는 게시판 주소를 키로 썼는데, 주소의 쿼리스트링만 손봐도(예: 한 번에
+    받는 목록 수를 pageSize=10 → 30으로 늘리는 조정) 그 게시판이 '새 게시판'으로
+    취급돼 기록이 사라졌다. 그러면 목록에 남아 있던 과거 공고 전부가 '새 공고'로
+    다시 알림되는 사고가 난다. 이름은 잘 바뀌지 않으니 이름을 키로 쓴다.
+    """
     if not os.path.exists(SEEN_FILE):
         return {}
     with open(SEEN_FILE, encoding="utf-8") as f:
-        return json.load(f)
+        raw = json.load(f)
+
+    url_to_name = {b["url"]: b["name"] for b in boards}
+    seen = {}
+    for key, entry in raw.items():
+        if not isinstance(entry, dict):
+            continue
+        # 예전 형식(주소 키)은 boards.txt의 이름으로 옮긴다. 주소가 바뀐 경우엔
+        # 기록 안에 남아 있는 name을 쓴다.
+        name = url_to_name.get(key) or entry.get("name") or key
+        existing = seen.get(name)
+        if existing is None:
+            seen[name] = entry
+            continue
+        # 같은 이름의 기록이 둘(옛 주소·새 주소) 있으면 합친다 — 중복 알림 방지.
+        merged_keys = list(dict.fromkeys(existing.get("keys", []) + entry.get("keys", [])))
+        seen[name] = {
+            "name": name,
+            "keys": merged_keys[:SEEN_KEEP],
+            # 한쪽이라도 정상 기록이면 '읽기 실패' 표시는 없앤다.
+            **({"error": True} if existing.get("error") and entry.get("error") else {}),
+        }
+    return seen
 
 
 def save_seen(seen):
@@ -577,7 +698,7 @@ def main():
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
 
-    seen = load_seen()
+    seen = load_seen(boards)
     results = fetch_all(boards)
 
     started = []
@@ -585,20 +706,20 @@ def main():
     try:
         for board in boards:
             url, name = board["url"], board["name"]
-            entry = seen.get(url)
+            entry = seen.get(name)  # 기록 키는 게시판 이름 (load_seen 참고)
             posts = results.get(url)
 
             if posts is None:
                 if entry is None:
                     failed.append(name)
-                    seen[url] = {"name": name, "keys": [], "error": True}
+                    seen[name] = {"name": name, "keys": [], "error": True}
                 continue
 
             keys = [post_key(p) for p in posts]
 
             if entry is None or entry.get("error"):
                 # 새로 등록된 게시판: 기존 공고는 알림 없이 기준선으로 저장
-                seen[url] = {"name": name, "keys": keys[:SEEN_KEEP]}
+                seen[name] = {"name": name, "keys": keys[:SEEN_KEEP]}
                 started.append(name)
                 logger.info("started watching %s (%d posts)", name, len(posts))
                 continue
@@ -634,9 +755,9 @@ def main():
                 "boards.txt의 주소를 확인해주세요.",
             )
 
-        # boards.txt에서 지워진 게시판의 기록은 정리
-        board_urls = {b["url"] for b in boards}
-        seen = {u: seen[u] for u in seen if u in board_urls}
+        # boards.txt에서 지워진 게시판의 기록은 정리 (이름 기준)
+        board_names = {b["name"] for b in boards}
+        seen = {n: seen[n] for n in seen if n in board_names}
     finally:
         save_seen(seen)
 
