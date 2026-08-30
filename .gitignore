@@ -3,6 +3,7 @@ __pycache__/
 .env
 subscriptions.db
 venv/
+debug_out.txt
 .venv/
 
 # 한국 VM 로컬 상태 (GitHub Actions와 충돌 방지 위해 커밋 안 함)
