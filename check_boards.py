@@ -728,9 +728,12 @@ def main():
             new_posts = [p for p in posts if post_key(p) not in known]
             for post in reversed(new_posts):  # 오래된 공고부터 순서대로 발송
                 date_part = f" ({post['date']})" if post["date"] else ""
+                # 번호부여·동의서처럼 동의 절차가 실제로 시작된 공고는 빨간
+                # 표시로 구분한다 — 설명회·공람 예고보다 훨씬 중요한 신호다.
+                icon = "🔴" if title_matches(post["title"], keyword_presets.URGENT) else "📋"
                 send_message(
                     token, chat_id,
-                    f"📋 [{name}] 새 공고{date_part}\n{post['title']}\n{post['link']}",
+                    f"{icon} [{name}] 새 공고{date_part}\n{post['title']}\n{post['link']}",
                 )
                 entry["keys"].insert(0, post_key(post))
                 logger.info("notified: [%s] %s", name, post["title"])
