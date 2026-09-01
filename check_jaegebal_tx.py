@@ -10,10 +10,15 @@ zones_jaegebal.txt 에 적힌 재개발 구역들의 상세 페이지를 읽어,
 그대로 쓴다.
 
 알림 규칙:
-- 구역 내 새 실거래는 전부 알린다.
-- 5억 이하는 🔴 로 강조한다 (초기 재개발에서 실투자 가능 금액대).
+- **5억 이하만 보낸다.** 그 위는 조용히 기록만 하고 넘긴다 — 실투자
+  가능 금액대가 아니면 알림이 늘기만 하고 도움이 안 된다.
+- 유형(다세대)은 표시하지 않는다. 5억 이하는 사실상 전부 다세대라
+  매 줄에 같은 말이 반복될 뿐이다. 다세대가 아닌 유형일 때만 적는다.
 - 첫 실행(새 구역 등록)은 알림 없이 기준선만 저장한다 — 다른 감시
   스크립트들과 같은 규칙.
+
+감시 구역은 매물 알림(매물텔)이 보는 구역과 같게 맞춘다. 매물을 줄 때
+그 구역의 실거래도 같이 준다는 것이 이 스크립트의 목적이다.
 
 필요한 환경변수: BOARD_BOT_TOKEN, TELEGRAM_CHAT_ID (게시판 알림과 공용)
 확인한 거래는 seen_jaegebal_tx.json 에 저장한다.
@@ -43,7 +48,7 @@ logger = logging.getLogger(__name__)
 ZONES_FILE = "zones_jaegebal.txt"
 SEEN_FILE = "seen_jaegebal_tx.json"
 SEEN_KEEP = 100          # 구역별 보관할 거래 키 수 (페이지엔 5건뿐이라 넉넉)
-HIGHLIGHT_MAX = 500_000_000   # 이 금액 이하는 🔴 강조
+MAX_PRICE = 500_000_000  # 5억 초과는 알리지 않는다 (기록만 하고 넘어감)
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -135,9 +140,11 @@ def tx_key(tx):
 
 def format_message(zone, tx):
     eok = f"{tx['price'] / 100_000_000:g}억" if tx["price"] else "가격미상"
-    icon = "🔴" if tx["price"] and tx["price"] <= HIGHLIGHT_MAX else "🏠"
+    icon = "🔴"
     name = html_mod.escape(zone["name"])
-    line2 = f"{html_mod.escape(tx['kind'])} {eok}"
+    # 유형은 다세대가 아닐 때만 적는다 (5억 이하는 거의 전부 다세대).
+    kind = "" if tx["kind"] in ("", "다세대") else html_mod.escape(tx["kind"]) + " "
+    line2 = f"{kind}{eok}"
     if tx["land"]:
         line2 += f" 대지 {tx['land']}평"
     if tx["area"]:
@@ -193,10 +200,15 @@ def main():
             known = set(entry["keys"])
             new_txs = [t for t in txs if tx_key(t) not in known]
             for tx in reversed(new_txs):  # 오래된 거래부터 순서대로 발송
-                send_message(token, chat_id, format_message(zone, tx),
-                             disable_preview=True)
+                # 5억 초과는 보내지 않는다. 다만 본 것으로 기록은 남겨야
+                # 다음 실행에서 다시 "새 거래"로 잡히지 않는다.
+                if tx["price"] is not None and tx["price"] <= MAX_PRICE:
+                    send_message(token, chat_id, format_message(zone, tx),
+                                 disable_preview=True)
+                    logger.info("알림: [%s] %s", zone["name"], tx["raw"][:80])
+                else:
+                    logger.info("건너뜀(5억 초과): [%s] %s", zone["name"], tx["raw"][:60])
                 entry["keys"].insert(0, tx_key(tx))
-                logger.info("알림: [%s] %s", zone["name"], tx["raw"][:80])
 
             entry["name"] = zone["name"]
             entry["keys"] = entry["keys"][:SEEN_KEEP]
