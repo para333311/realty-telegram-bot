@@ -117,25 +117,15 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.BOARD_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
         run: python check_sibo.py
 
-      # 재개발닷컴 구역 상세는 서버 렌더링이라 로그인 없이 최근 실거래 5건이
-      # HTML에 그대로 있다. 감시 구역은 zones_jaegebal.txt 에서 관리한다.
-      - name: 재개발닷컴 구역 실거래 확인 및 알림 전송
-        timeout-minutes: 5
-        continue-on-error: true
-        env:
-          BOARD_BOT_TOKEN: ${{ secrets.BOARD_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.BOARD_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
-        run: python check_jaegebal_tx.py
-
       - name: 확인한 글 기록 저장
         # 중간 단계가 실패해도 이미 발송한 알림의 기록은 반드시 커밋한다
         # (기록이 누락되면 다음 실행에서 같은 알림이 중복 발송됨)
         if: always()
         run: |
-          if [ -n "$(git status --porcelain seen.json seen_boards.json seen_booriny.json seen_cafe.json seen_sibo.json seen_jaegebal_tx.json)" ]; then
+          if [ -n "$(git status --porcelain seen.json seen_boards.json seen_booriny.json seen_cafe.json seen_sibo.json)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add seen.json seen_boards.json seen_booriny.json seen_cafe.json seen_sibo.json seen_jaegebal_tx.json
+            git add seen.json seen_boards.json seen_booriny.json seen_cafe.json seen_sibo.json
             git commit -m "chore: 확인한 글 기록 업데이트"
             # push가 GitHub 쪽 일시적 오류(예: commit_refs 오류)로 실패하면
             # 기록 누락 → 다음 실행 중복 알림으로 이어지므로 몇 차례 재시도한다.
