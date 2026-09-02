@@ -322,6 +322,7 @@ def main():
                     # 새로 추가된 블로그가 잘못된 주소일 수 있으니 한 번만 알려준다
                     failed.append(blog_id)
                     seen[blog_id] = {"name": blog_id, "links": [], "error": True}
+                    save_seen(seen)
                 continue
 
             blog_name, posts = result
@@ -332,6 +333,7 @@ def main():
                 seen[blog_id] = {"name": blog_name, "links": links[:SEEN_LINKS_KEEP]}
                 started.append(blog_name)
                 logger.info("started watching %s (%s)", blog_name, blog_id)
+                save_seen(seen)
                 continue
 
             known = set(entry["links"])
@@ -342,6 +344,13 @@ def main():
                     f"🔔 [{blog_name}] 새 글 등록\n{post['title']}\n{post['link']}",
                 )
                 entry["links"].insert(0, post["link"])
+                entry["links"] = entry["links"][:SEEN_LINKS_KEEP]
+                entry["name"] = blog_name
+                # 이 스텝은 6분 타임아웃에 걸려 중간에 강제 종료될 수 있다(관측:
+                # 2026-08-30~09-02 184개 블로그 순회 중 대부분 타임아웃). 끝에서
+                # 한 번만 저장하면 이미 보낸 알림도 기록이 안 남아 다음 실행에서
+                # 밀린 글과 함께 다시 쏟아진다. 보낸 즉시 저장해 재전송을 막는다.
+                save_seen(seen)
                 logger.info("notified: [%s] %s", blog_name, post["title"])
 
             entry["name"] = blog_name
