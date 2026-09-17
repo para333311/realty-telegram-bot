@@ -12,7 +12,7 @@
 
 필요한 환경변수:
 - MY_BLOG_ID: 이웃 목록을 읽어올 내 블로그 아이디
-- TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID: 변경분 알림 (없으면 로그만 남긴다)
+- TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID: 증감 보고 (없으면 로그만 남긴다)
 - SYNC_FORCE=1: 대량 삭제 안전장치를 무시하고 강행
 """
 
@@ -205,22 +205,22 @@ def main():
 
     write_blogs_file(BLOGS_FILE, manual_ids, buddies)
 
-    if not added and not removed:
-        logger.info("변경 없음 (이웃 %d명, 직접 추가 %d개)", len(buddy_ids), len(manual_ids))
-        return 0
-
-    lines = ["📋 네이버 이웃 목록 동기화"]
+    # 변동이 없어도 매일 한 줄은 보낸다. 내가 네이버에서 추가·삭제한 것이
+    # 반영됐는지, 동기화가 살아는 있는지를 이 메시지 하나로 확인하려는 것이다.
+    delta = " ".join(p for p in (f"+{len(added)}" if added else "",
+                                 f"-{len(removed)}" if removed else "") if p)
+    lines = [f"📋 네이버 이웃 {len(buddy_ids)}명 ({delta or '변동 없음'})"]
+    lines.append(f"직접 추가 {len(manual_ids)}개 · 알림 대상 {len(buddy_ids) + len(manual_ids)}개")
     if added:
-        lines.append(f"\n➕ 추가 {len(added)}개")
-        lines += [f"· {names.get(b, b)} ({b})" for b in added[:20]]
+        lines.append("")
+        lines += [f"➕ {names.get(b, b)} ({b})" for b in added[:20]]
         if len(added) > 20:
             lines.append(f"… 외 {len(added) - 20}개")
     if removed:
-        lines.append(f"\n➖ 삭제 {len(removed)}개")
-        lines += [f"· {b}" for b in removed[:20]]
+        lines.append("")
+        lines += [f"➖ {b}" for b in removed[:20]]
         if len(removed) > 20:
             lines.append(f"… 외 {len(removed) - 20}개")
-    lines.append(f"\n이웃 {len(buddy_ids)}명 + 직접 추가 {len(manual_ids)}개")
     notify("\n".join(lines))
     logger.info("동기화 완료: +%d / -%d", len(added), len(removed))
     return 0

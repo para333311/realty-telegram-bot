@@ -46,7 +46,7 @@ jobs:
         timeout-minutes: 5
         env:
           MY_BLOG_ID: para333311
-          # 블로그 알림과 같은 채널(@jejeboard2)로 변경분을 알린다.
+          # 블로그 알림과 같은 채널(@jejeboard2)로 하루 한 번 증감을 보고한다.
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.BLOG_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
           SYNC_FORCE: ${{ inputs.force && '1' || '' }}
