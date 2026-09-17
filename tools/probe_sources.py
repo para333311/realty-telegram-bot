@@ -1,6 +1,11 @@
-"""네프콘 채널 2개와 카페 1개의 새 글 목록을 로그인 없이 읽을 수 있는지 찾는 탐침.
+"""탐침 2단계 - 네프콘 채널 글목록 API와 카페 글목록 응답 구조 확인.
 
-개발 컨테이너는 naver.com 이그레스가 막혀 있어 Actions에서 실측한다.
+1단계 결과:
+  · naver.me/xFLApksH -> contents.premium.naver.com/jejeguide/jejemvp
+  · naver.me/x78NrtkA -> contents.premium.naver.com/jejeguide/jeje
+    (주소가 {크리에이터}/{채널} 두 마디였는데 첫 마디만 보고 404를 맞았다)
+  · 카페 휴멘(clubId=31636706) 글목록은 로그인 없이 200으로 읽힌다:
+    apis.naver.com/cafe-web/cafe2/ArticleListV2.json?search.clubid=...
 """
 
 import json
@@ -16,112 +21,86 @@ UA = (
 S = requests.Session()
 S.headers.update({"User-Agent": UA})
 
-SHORT_LINKS = ["https://naver.me/xFLApksH", "https://naver.me/x78NrtkA"]
+CHANNELS = [("jejeguide", "jejemvp"), ("jejeguide", "jeje")]
+CLUB_ID = 31636706
 CAFE_URL = "https://cafe.naver.com/jejeria"
 
 
-def head(label, url, **kw):
+def get(label, url, **kw):
     try:
         r = S.get(url, timeout=20, **kw)
     except Exception as e:
-        print(f"  [{label}] 실패 {type(e).__name__}: {e}")
+        print(f"    [{label}] 실패 {type(e).__name__}: {e}")
         return None
-    ct = (r.headers.get("content-type") or "")[:40]
-    print(f"  [{label}] http={r.status_code} len={len(r.text)} ct={ct}")
+    print(f"    [{label}] http={r.status_code} len={len(r.text)} ct={(r.headers.get('content-type') or '')[:35]}")
     return r
 
 
 def main():
-    print("=" * 70)
-    print("1) 단축링크 풀기")
-    finals = []
-    for link in SHORT_LINKS:
-        try:
-            r = S.get(link, timeout=20, allow_redirects=True)
-            print(f"  {link}\n    -> {r.url}  (http={r.status_code})")
-            finals.append(r.url)
-        except Exception as e:
-            print(f"  {link} 실패: {type(e).__name__}: {e}")
-
-    print("\n" + "=" * 70)
-    print("2) 네프콘 채널 페이지에서 API 경로 찾기")
-    for url in finals:
-        m = re.search(r"contents\.premium\.naver\.com/([\w-]+)", url)
-        if not m:
-            print(f"  {url} -> 네프콘 주소가 아님, 건너뜀")
-            continue
-        channel = m.group(1)
-        print(f"\n  -- 채널 '{channel}' --")
-        r = head("채널 페이지", f"https://contents.premium.naver.com/{channel}")
-        if not r:
+    for creator, channel in CHANNELS:
+        page_url = f"https://contents.premium.naver.com/{creator}/{channel}"
+        print("=" * 70)
+        print(f"채널 {creator}/{channel}")
+        r = get("채널 페이지", page_url)
+        if not r or r.status_code != 200:
             continue
         html = r.text
 
-        # 페이지에 박힌 채널 식별자
-        for pat in (r'"channelId"\s*:\s*"?([\w-]+)"?', r'"channelName"\s*:\s*"([^"]+)"',
-                    r'"contentsNo"\s*:\s*(\d+)', r'"channelKey"\s*:\s*"([^"]+)"'):
-            hits = list(dict.fromkeys(re.findall(pat, html)))[:5]
+        for pat in (r'"channelId"\s*:\s*"?([\w-]+)"?', r'"channelNo"\s*:\s*(\d+)',
+                    r'"channelName"\s*:\s*"([^"]{1,40})"', r'"volumeNo"\s*:\s*(\d+)',
+                    r'"contentsNo"\s*:\s*(\d+)'):
+            hits = list(dict.fromkeys(re.findall(pat, html)))[:6]
             if hits:
-                print(f"     {pat} -> {hits}")
+                print(f"    {pat} -> {hits}")
 
-        api_paths = sorted(set(re.findall(r'["\'](/?(?:api|v1)[\w./{}$-]*)["\']', html)))[:25]
-        print(f"     HTML 내 api 후보: {api_paths[:15]}")
+        m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.S)
+        print(f"    __NEXT_DATA__: {'있음' if m else '없음'}")
+        if m:
+            try:
+                props = json.loads(m.group(1)).get("props", {}).get("pageProps", {})
+                print(f"    pageProps 키: {list(props.keys())[:15]}")
+                print(f"    pageProps 일부: {json.dumps(props, ensure_ascii=False)[:600]}")
+            except Exception as e:
+                print(f"    __NEXT_DATA__ 파싱 실패: {e}")
 
-        srcs = re.findall(r'<script[^>]+src="([^"]+)"', html)
-        print(f"     script {len(srcs)}개")
         found = set()
-        for src in srcs[:12]:
+        for src in re.findall(r'<script[^>]+src="([^"]+)"', html)[:14]:
             u = src if src.startswith("http") else ("https:" + src if src.startswith("//")
-                                                    else "https://contents.premium.naver.com" + src)
+                                                    else f"https://contents.premium.naver.com{src}")
             try:
                 js = S.get(u, timeout=25).text
             except Exception:
                 continue
-            for p in re.findall(r'["\'`](/(?:api|v\d)[\w./{}$-]*(?:contents|articles|volumes)[\w./{}$-]*)["\'`]', js):
-                if p not in found:
-                    found.add(p)
-        for p in sorted(found)[:25]:
-            print(f"     JS: {p}")
+            for p in re.findall(r'["\'`]((?:https://[\w.]*premium[\w.]*)?/(?:api|v\d)[\w./{}$-]{3,80})["\'`]', js):
+                found.add(p)
+        hits = sorted(p for p in found if re.search(r"content|article|volume|list|channel", p, re.I))
+        print(f"    JS 내 API 후보 {len(hits)}개:")
+        for p in hits[:30]:
+            print(f"      {p}")
 
-        # 흔한 목록 API 후보 직접 호출
         for label, u in [
-            ("api.premium contents", f"https://api.premium.naver.com/contents/channels/{channel}/contents?page=0&size=10"),
-            ("api.premium volumes", f"https://api.premium.naver.com/channel/channels/{channel}/contents?page=0&size=10"),
-            ("contents.premium api", f"https://contents.premium.naver.com/api/channels/{channel}/contents?page=0&size=10"),
-            ("rss", f"https://contents.premium.naver.com/rss/{channel}"),
+            ("api.premium contents", f"https://api.premium.naver.com/contents/channels/{channel}/contents?page=0&size=5"),
+            ("api.premium v1", f"https://api.premium.naver.com/v1/channels/{channel}/contents?page=0&size=5"),
+            ("contents.premium api", f"https://contents.premium.naver.com/api/channels/{channel}/contents?page=0&size=5"),
+            ("rss", f"https://contents.premium.naver.com/rss/{creator}/{channel}"),
         ]:
-            rr = head(label, u, headers={"Accept": "application/json, */*",
-                                         "Referer": f"https://contents.premium.naver.com/{channel}"})
-            if rr is not None and rr.status_code == 200 and len(rr.text) < 1500:
-                print(f"       body: {re.sub(r'[srn]+', ' ', rr.text[:400])}")
+            rr = get(label, u, headers={"Accept": "application/json, */*", "Referer": page_url})
+            if rr is not None and rr.status_code == 200:
+                print(f"      body: {rr.text[:300]}")
 
     print("\n" + "=" * 70)
-    print("3) 카페 jejeria")
-    r = head("카페 페이지", CAFE_URL)
-    club_ids = []
-    if r:
-        club_ids = list(dict.fromkeys(re.findall(r'clubid[=\"\':\s]+(\d{6,})', r.text, re.I)))
-        club_ids += list(dict.fromkeys(re.findall(r'"cafeId"\s*:\s*"?(\d{6,})"?', r.text)))
-        print(f"  clubId 후보: {club_ids[:5]}")
-    for label, u in [
-        ("CafeInfo", "https://apis.naver.com/cafe-web/cafe2/CafeInfo.json?cafeUrl=jejeria"),
-        ("GateInfo", "https://apis.naver.com/cafe-web/cafe-cafeinfo-api/v1.0/cafes/jejeria/info"),
-    ]:
-        rr = head(label, u, headers={"Referer": CAFE_URL})
-        if rr is not None and rr.status_code == 200:
-            print(f"    body: {rr.text[:300]}")
-            club_ids += re.findall(r'"cafeId"\s*:\s*"?(\d{6,})"?', rr.text)
-
-    for cid in list(dict.fromkeys(club_ids))[:2]:
-        print(f"\n  -- clubId={cid} 글목록 API --")
-        for label, u in [
-            ("ArticleList.json", f"https://apis.naver.com/cafe-web/cafe2/ArticleList.json?search.clubid={cid}&search.queryType=lastArticle&search.page=1&search.perPage=10"),
-            ("ArticleListV2dot1", f"https://apis.naver.com/cafe-web/cafe2/ArticleListV2dot1.json?search.clubid={cid}&search.queryType=lastArticle&search.menuid=0&search.page=1&search.perPage=10"),
-            ("f-e articles", f"https://apis.naver.com/cafe-web/cafe2/ArticleListV2.json?search.clubid={cid}&search.queryType=lastArticle&search.page=1&search.perPage=10"),
-        ]:
-            rr = head(label, u, headers={"Referer": CAFE_URL})
-            if rr is not None and rr.status_code == 200:
-                print(f"    body 앞부분: {rr.text[:400]}")
+    print("카페 휴멘 글목록 구조")
+    u = (f"https://apis.naver.com/cafe-web/cafe2/ArticleListV2.json?search.clubid={CLUB_ID}"
+         "&search.queryType=lastArticle&search.page=1&search.perPage=5")
+    r = get("ArticleListV2", u, headers={"Referer": CAFE_URL})
+    if r and r.status_code == 200:
+        result = r.json()["message"]["result"]
+        print(f"    cafeName={result.get('cafeName')} hasNext={result.get('hasNext')}")
+        arts = result.get("articleList", [])
+        print(f"    글 {len(arts)}건, 첫 글 필드: {sorted(arts[0].keys()) if arts else '없음'}")
+        for a in arts[:5]:
+            print(f"      #{a.get('articleId')} [{a.get('menuName')}] {a.get('subject')} "
+                  f"/ {a.get('writeDateTimestamp')} / {a.get('writerNickname')}")
     return 0
 
 
