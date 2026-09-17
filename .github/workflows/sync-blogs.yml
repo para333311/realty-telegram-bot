@@ -1,0 +1,71 @@
+name: 네이버 이웃 목록 동기화
+
+# 네이버에서 이웃을 추가/삭제한 것을 blogs.txt에 그대로 옮긴다.
+# blogs.txt를 손으로 고치지 않아도 되게 하려는 것이고, 이웃이 아닌데 알림을
+# 받고 싶은 블로그는 blogs.txt의 '직접 추가' 구역에 적어두면 건드리지 않는다.
+#
+# 이웃 목록이 자주 바뀌는 것도 아니고 남의 서버를 긁는 것이라 하루 한 번만 돈다.
+# 새 글 알림(check-blogs.yml)과 같은 concurrency 그룹을 써서, 두 워크플로가
+# 동시에 커밋을 밀어 push가 엉키는 일을 막는다.
+
+on:
+  # TODO(임시): 브랜치에서 한 번 실제로 돌려보려고 넣었다. 확인되면 지운다.
+  push:
+    branches:
+      - "claude/**"
+  schedule:
+    # 04:17 KST (19:17 UTC). 정각은 GitHub 스케줄 혼잡으로 자주 밀린다.
+    - cron: "17 19 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "대량 삭제 안전장치를 무시하고 강행"
+        type: boolean
+        default: false
+
+concurrency:
+  group: blog-check
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: 의존성 설치
+        run: pip install requests
+
+      - name: 이웃 목록 동기화
+        timeout-minutes: 5
+        env:
+          MY_BLOG_ID: para333311
+          # 블로그 알림과 같은 채널(@jejeboard2)로 변경분을 알린다.
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.BLOG_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
+          SYNC_FORCE: ${{ inputs.force && '1' || '' }}
+        run: python sync_blogs.py
+
+      - name: blogs.txt 변경 커밋
+        run: |
+          if [ -n "$(git status --porcelain blogs.txt)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add blogs.txt
+            git commit -m "chore: 네이버 이웃 목록 동기화"
+            for attempt in 1 2 3 4; do
+              git pull --rebase origin "$GITHUB_REF_NAME" && git push && break
+              echo "push 실패, 재시도 $attempt/4"
+              sleep $((attempt * 5))
+            done
+          fi
