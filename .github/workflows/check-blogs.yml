@@ -71,6 +71,16 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.BLOG_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
         run: python check_once.py
 
+      # 휴식이형 네프콘 2개와 카페 휴멘. 블로그와 같은 성격의 읽을거리라 같은
+      # 채널(@jejeboard2)로 보내고, 출처는 이모지(🔴🟡🟢)로 구분한다.
+      - name: 네프콘·카페 새 글 확인 및 알림 전송
+        timeout-minutes: 4
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.BLOG_CHANNEL_ID || secrets.TELEGRAM_CHAT_ID }}
+        run: python check_jeje.py
+
       # 재재보드 봇(구청 게시판·카페·서울시보 공용)이 보내는 알림은 전부 전용
       # 채널(@jejeboard3)로 분리. BOARD_CHANNEL_ID 미설정 시 기존 개인 채팅으로
       # 폴백해 시크릿 설정 전에도 알림이 끊기지 않는다.
@@ -122,10 +132,10 @@ jobs:
         # (기록이 누락되면 다음 실행에서 같은 알림이 중복 발송됨)
         if: always()
         run: |
-          if [ -n "$(git status --porcelain seen.json seen_boards.json seen_booriny.json seen_cafe.json seen_sibo.json)" ]; then
+          if [ -n "$(git status --porcelain seen.json seen_boards.json seen_booriny.json seen_cafe.json seen_sibo.json seen_jeje.json)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add seen.json seen_boards.json seen_booriny.json seen_cafe.json seen_sibo.json
+            git add seen.json seen_boards.json seen_booriny.json seen_cafe.json seen_sibo.json seen_jeje.json
             git commit -m "chore: 확인한 글 기록 업데이트"
             # push가 GitHub 쪽 일시적 오류(예: commit_refs 오류)로 실패하면
             # 기록 누락 → 다음 실행 중복 알림으로 이어지므로 몇 차례 재시도한다.
