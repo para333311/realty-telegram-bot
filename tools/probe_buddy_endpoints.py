@@ -1,11 +1,12 @@
-"""탐침 4단계 - /api/blogs/{blogId}/buddies 의 정확한 파라미터를 JS 번들에서 캔다.
+"""탐침 5단계 - /api/blogs/{blogId}/public-buddies?pageNo=N 전수 확인.
 
-3단계 결과:
-  · m.blog BuddyList 페이지는 이웃을 서버렌더 HTML로 50명까지만 담고 있다
-  · 번들에 /api/blogs/${e}/buddies 계열 경로가 실재하고, 파라미터 없이 부르면
-    500 + JSON 에러가 돌아온다 → 엔드포인트는 맞고 파라미터가 틀린 것
+4단계에서 m.blog 번들의 호출부를 찾았다:
+  get(`/api/blogs/${blogId}/public-buddies?${stringify({pageNo})}`)
+  meta 에 totalPublicBuddyCount / currentCursor 가 들어온다.
+여기서 페이지를 끝까지 돌려 전체 이웃 수와 blogs.txt 차이를 확인한다.
 """
 
+import json
 import os
 import re
 import sys
@@ -23,64 +24,56 @@ S.headers.update(
         "User-Agent": UA,
         "Referer": f"https://m.blog.naver.com/BuddyList.naver?blogId={MY_ID}",
         "Accept": "application/json, text/plain, */*",
-        "X-Requested-With": "XMLHttpRequest",
     }
 )
-
-
-def ctx(js, needle, span=260, limit=8):
-    out = []
-    for m in list(re.finditer(re.escape(needle), js))[:limit]:
-        s = max(0, m.start() - span)
-        out.append(js[s : m.start() + span])
-    return out
+API = f"https://m.blog.naver.com/api/blogs/{MY_ID}/public-buddies"
 
 
 def main():
-    html = S.get(f"https://m.blog.naver.com/BuddyList.naver?blogId={MY_ID}", timeout=20).text
+    r = S.get(API, params={"pageNo": 1}, timeout=20)
+    print(f"pageNo=1 -> http={r.status_code} len={len(r.text)}")
+    print(f"body 앞부분: {r.text[:600]}\n")
+    if r.status_code != 200:
+        return 1
 
-    # 총 이웃 수 힌트
-    print("== '명' 앞뒤 문맥 ==")
-    for m in list(re.finditer(r"명", html))[:10]:
-        print("   ..." + re.sub(r"\s+", " ", html[max(0, m.start() - 120) : m.start() + 30]))
+    data = r.json()
+    result = data.get("result", data.get("data", {}).get("result", {}))
+    print(f"최상위 키: {list(data.keys())}")
+    print(f"result 키: {list(result.keys()) if isinstance(result, dict) else type(result)}")
+    for k in ("totalPublicBuddyCount", "totalCount", "currentPage", "currentCursor"):
+        if isinstance(result, dict) and k in result:
+            print(f"  {k} = {result[k]}")
 
-    srcs = [s for s in re.findall(r'<script[^>]+src="([^"]+)"', html) if "main" in s or ".js" in s]
-    print(f"\n== JS {len(srcs)}개에서 buddies 호출부 ==")
-    for src in srcs:
-        url = src if src.startswith("http") else ("https:" + src if src.startswith("//") else "https://m.blog.naver.com" + src)
-        try:
-            js = S.get(url, timeout=25).text
-        except Exception:
-            continue
-        for needle in ("/buddies", "BuddyList.naver", "buddyList"):
-            for c in ctx(js, needle, 240, 4):
-                print(f"   [{needle}] ...{c}...\n")
+    all_ids, page = [], 1
+    while page <= 30:
+        rr = S.get(API, params={"pageNo": page}, timeout=20)
+        if rr.status_code != 200:
+            print(f"pageNo={page} http={rr.status_code} 중단")
+            break
+        res = rr.json().get("result", {})
+        items = res.get("buddyList") or res.get("items") or []
+        ids = [it.get("blogId") for it in items if it.get("blogId")]
+        print(f"  pageNo={page}: {len(ids)}명")
+        if not ids:
+            break
+        before = len(all_ids)
+        all_ids += [i for i in ids if i not in all_ids]
+        if len(all_ids) == before:
+            print("  (새 아이디 없음 → 페이지네이션 끝)")
+            break
+        page += 1
 
-    print("== /api/blogs/{id}/buddies 파라미터 조합 ==")
-    base = f"https://m.blog.naver.com/api/blogs/{MY_ID}/buddies"
-    param_sets = [
-        {},
-        {"page": 1, "size": 50},
-        {"currentPage": 1, "countPerPage": 50},
-        {"offset": 0, "limit": 50},
-        {"buddyGroupId": 0, "page": 1},
-        {"page": 1, "size": 50, "sortType": "UPDATE"},
-        {"nextFrom": 1, "count": 50},
+    known = [
+        l.strip()
+        for l in open("blogs.txt", encoding="utf-8")
+        if l.strip() and not l.startswith("#")
     ]
-    for p in param_sets:
-        try:
-            r = S.get(base, params=p, timeout=20)
-        except Exception as e:
-            print(f"   {p} -> 실패 {e}")
-            continue
-        body = re.sub(r"\s+", " ", r.text[:300])
-        print(f"   {p} -> http={r.status_code} len={len(r.text)} body={body}")
-
-    print("\n== blog.naver.com(데스크톱) 쪽 동일 API ==")
-    for host in ("https://blog.naver.com", "https://section.blog.naver.com"):
-        r = S.get(f"{host}/api/blogs/{MY_ID}/buddies", params={"page": 1, "size": 50}, timeout=20)
-        body = re.sub(r"\s+", " ", r.text[:200])
-        print(f"   {host} -> http={r.status_code} len={len(r.text)} {body}")
+    print(f"\n== 결과 ==")
+    print(f"네이버 공개 이웃: {len(all_ids)}명 / blogs.txt: {len(known)}개")
+    print(f"이웃인데 blogs.txt에 없음({len(set(all_ids)-set(known))}): {sorted(set(all_ids)-set(known))}")
+    print(f"blogs.txt에만 있음({len(set(known)-set(all_ids))}): {sorted(set(known)-set(all_ids))}")
+    print("\n전체 이웃 목록:")
+    print(json.dumps(all_ids, ensure_ascii=False))
     return 0
 
 
