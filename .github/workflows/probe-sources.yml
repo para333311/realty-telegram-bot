@@ -1,0 +1,19 @@
+name: (임시) 네프콘·카페 목록 엔드포인트 탐침
+
+on:
+  push:
+    branches:
+      - "claude/**"
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - run: python tools/probe_sources.py
