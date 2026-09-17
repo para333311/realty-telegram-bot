@@ -16,6 +16,7 @@ deamyoung11
 jmd0104
 
 # === 네이버 이웃 자동 동기화 (여기는 통째로 다시 씁니다) ===
+life-free
 yeongl
 sms59316
 asclepina
@@ -32,7 +33,6 @@ kason1
 goodie_hj
 stocknote8224
 dpnews2024
-life-free
 hoonihooon_
 amigu33
 heybrogo
