@@ -59,7 +59,9 @@ KEYWORDS = [
 ]
 
 # "제2026-402호  <제목>· · · ... <페이지>" 형태의 목차 항목 파싱
-ENTRY_RE = re.compile(r"제(\d{4}-\d+)호\s*(.+?)(?:·\s*){3,}(\d+)(?=제\d{4}-\d+호|◈|$)", re.S)
+# 쪽번호 뒤 줄바꿈을 허용해야 한다 — 없으면 끝을 못 찾고 뒤 항목들을 통째로 삼켜 한 항목이 3천 자가 됐다
+# (알림이 텔레그램 4,096자를 넘어 400 으로 9월 내내 한 통도 못 나감, 2026-09-29)
+ENTRY_RE = re.compile(r"제(\d{4}-\d+)호\s*(.+?)(?:·\s*){3,}(\d+)(?=\s*(?:제\d{4}-\d+호|◈|\[|$))", re.S)
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
@@ -114,7 +116,7 @@ def extract_matches(session, filename):
         if not found and entries:
             break
         for _, title, _ in found:
-            entries.append(title.strip())
+            entries.append(" ".join(title.split()))
 
     return [t for t in entries if any(k in t for k in KEYWORDS)]
 
@@ -201,11 +203,25 @@ def main():
         if matches:
             # 항목마다 번호를 붙이고 빈 줄로 띄워서 읽기 편하게 한다
             # (붙어 있으면 어디서 항목이 끝나고 시작하는지 구분이 안 돼 가독성이 떨어짐).
-            titles = "\n\n".join(f"{i}. {t}" for i, t in enumerate(matches, 1))
-            send_message(
-                token, chat_id,
-                f"📰 [서울시보 제{no}호, {info['date']}]\n재개발 관련 목차\n\n{titles}\n\n{LIST_URL}",
-            )
+            # 텔레그램 한 통은 4,096자까지 — 넘으면 항목 경계에서 나눠 보낸다.
+            # 보내다 실패하면 이 호수만 다음 회차에 다시(뒤 호수와 기록 저장은 막지 않는다).
+            head = f"📰 [서울시보 제{no}호, {info['date']}]\n재개발 관련 목차\n\n"
+            items = [f"{i}. {t}" for i, t in enumerate(matches, 1)]
+            chunks, cur = [], ""
+            for it in items:
+                if cur and len(head) + len(cur) + len(it) + len(LIST_URL) + 4 > 3900:
+                    chunks.append(cur)
+                    cur = ""
+                cur += ("\n\n" if cur else "") + it[:3000]
+            chunks.append(cur)
+            try:
+                for k, body in enumerate(chunks):
+                    send_message(token, chat_id, (head if k == 0 else head.replace("재개발 관련 목차", f"재개발 관련 목차 (이어서 {k + 1}/{len(chunks)})")) + body + f"\n\n{LIST_URL}")
+            except Exception as e:
+                info["attempts"] += 1
+                logger.warning("제%s호: 알림 전송 실패(시도 %d/%d): %s", no, info["attempts"], MAX_ATTEMPTS, e)
+                if info["attempts"] < MAX_ATTEMPTS:
+                    continue
             logger.info("제%s호: 재개발 관련 %d건 알림", no, len(matches))
         else:
             logger.info("제%s호: 재개발 관련 항목 없음", no)
