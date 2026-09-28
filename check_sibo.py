@@ -229,6 +229,9 @@ def main():
         done.append(no)
         done_set.add(no)
         del pending[no]
+        # 호수마다 바로 저장 — PDF 가 느려 단계 제한 시간(5분)에 잘리면 끝 저장까지 못 가서,
+        # 이미 보낸 호수를 다음 회차에 또 보내고 또 잘리는 고리가 됐다(2026-09-29).
+        save_seen({"done": done, "pending": pending})
 
     save_seen({"done": done, "pending": pending})
 
