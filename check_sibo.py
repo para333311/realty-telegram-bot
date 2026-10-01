@@ -28,6 +28,8 @@ import os
 import re
 
 import requests
+
+RED_MARK = re.compile(r"정비\s*계획|정비\s*구역")
 import urllib3
 from bs4 import BeautifulSoup
 
@@ -206,7 +208,8 @@ def main():
             # 텔레그램 한 통은 4,096자까지 — 넘으면 항목 경계에서 나눠 보낸다.
             # 보내다 실패하면 이 호수만 다음 회차에 다시(뒤 호수와 기록 저장은 막지 않는다).
             head = f"📰 [서울시보 제{no}호, {info['date']}]\n재개발 관련 목차\n\n"
-            items = [f"{i}. {t}" for i, t in enumerate(matches, 1)]
+            # 파라님 10/1: 「정비계획」·「정비구역」 이 든 항목은 앞에 🔴 — 한눈에 보이게.
+            items = [f"{'🔴 ' if RED_MARK.search(t) else ''}{i}. {t}" for i, t in enumerate(matches, 1)]
             chunks, cur = [], ""
             for it in items:
                 if cur and len(head) + len(cur) + len(it) + len(LIST_URL) + 4 > 3900:
