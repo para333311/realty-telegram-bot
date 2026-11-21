@@ -13,15 +13,15 @@
 para333311
 
 # === 네이버 이웃 자동 동기화 (여기는 통째로 다시 씁니다) ===
-joyland7499
-ojh919
-parkterrace501
-korea_gov
-indoguji1
-investinhouses
-asclepina
 nogosanace
 goodie_hj
+ojh919
+indoguji1
+parkterrace501
+asclepina
+joyland7499
+korea_gov
+investinhouses
 hs_kuma
 sbk4021
 0114usa
